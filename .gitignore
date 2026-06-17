@@ -10,10 +10,10 @@ __pycache__/
 media/
 
 # Node / React
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/.env
+node_modules/
+dist/
+.vite/
+.env
 
 # System
 .DS_Store
