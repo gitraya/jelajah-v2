@@ -10,7 +10,7 @@ Jelajah is a collaborative travel-planning app (CS50W final project): Django RES
 
 - `backend/` — Django REST Framework API (the source of truth for data and auth).
 - `frontend/` — The **active, production** React SPA (React 19 + Vite + Tailwind v4). This is the app deployed to `jelajah.raya.bio` and referenced throughout `README.md`.
-- `frontend-v2/` — A **work-in-progress** redesign exported from Figma Make (React 18, MUI + shadcn/Radix, TypeScript). It is UI/prototype scaffolding only: no API integration, tests, or lint config, and not wired into Docker/CI/deploy. The current branch `feat/frontend-v2` is iterating on it. Do not assume v2 has backend connectivity.
+- `frontend-v2/` — A **work-in-progress** redesign originally exported from Figma Make (React 18, MUI + shadcn/Radix, TypeScript, `react-router` v7). Branch `feat/frontend-v2` is iterating on it: it now has real backend wiring (axios + the same domain contexts as v1), but still **no tests, no lint, and no `tsconfig.json`** (so TypeScript is never typechecked — Vite only strips types), and it is not in CI or deploy.
 
 ## Commands
 
@@ -28,15 +28,15 @@ Jelajah is a collaborative travel-planning app (CS50W final project): Django RES
 - Tests (vitest): `npm run test`  — run a single file: `npx vitest run src/tests/<file>`
 
 ### Frontend v2 (`cd frontend-v2`)
-- Dev: `npm run dev`; Build: `npm run build`. No lint or test scripts exist.
+- Dev: `npm run dev` (port 5174); Build: `npm run build`. Only these two scripts exist — no lint, test, or typecheck.
 
-### Docker (full stack)
-`docker-compose up --build` brings up backend (8000), frontend v1 (5173), and PostgreSQL (5432). Prefix manage.py commands with `docker-compose exec backend`. Note: `docker-compose.yml` wires up `frontend/`, not `frontend-v2/`.
+### Docker (full stack) — prefer the `Makefile`
+`make up` (= `docker compose up --build -d`) brings up backend (8000), frontend v1 (5173), frontend v2 (5174), and PostgreSQL (5432). `make help` lists all targets; notable ones: `make run` (foreground), `make logs`, `make down`, `make clean` (drops DB + node_modules volumes), `make up-one s=<service>`, `make sh s=<service>`, and backend helpers `make migrate` / `make makemigrations` / `make superuser` / `make test` that exec inside the backend container.
 
 ## Environment
 
 - `backend/.env` requires: `DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FRONTEND_URL`, `SENDGRID_API_KEY` (leave empty to skip email locally), `DEFAULT_FROM_EMAIL`. In production `DATABASE_URL` is read via `dj-database-url`; locally it falls back to a local PostgreSQL config.
-- `frontend/.env` requires: `VITE_BACKEND_URL` (e.g. `http://localhost:8000/api`).
+- `frontend/.env` and `frontend-v2/.env` each require: `VITE_BACKEND_URL` (e.g. `http://localhost:8000/api`). Both are referenced by `docker-compose.yml`, so a missing v2 `.env` breaks `make up`.
 
 ## Backend architecture
 
@@ -56,6 +56,17 @@ Jelajah is a collaborative travel-planning app (CS50W final project): Django RES
 - **API access** goes through helpers in `src/lib/utils.js`, which set `axios.defaults.baseURL = VITE_BACKEND_URL` and `withCredentials = true` (required for the HTTP-only auth cookies). Use these helpers rather than calling axios directly.
 - **Enums/labels mirroring backend choices** live in `src/configs/` — keep these in sync with backend `TextChoices` when changing domain enums.
 - Routing uses `react-router-dom` with auth-aware protected routes.
+
+## Frontend v2 architecture
+
+Mirrors v1's domain model deliberately — port patterns from `frontend/` rather than inventing new ones.
+
+- **Two component worlds.** `src/app/components/` holds the Figma-generated screens (`DesktopTrips`, `DesktopTripDetail`, `DesktopExplore`, `DesktopAIBuilder`, `Onboarding`, …) plus `components/ui/` (shadcn/Radix primitives); `src/components/layouts/` holds hand-written `AppShell` / `ProtectedLayout`. `src/pages/` holds hand-written auth pages. Figma-generated code also lives in `src/imports/` and uses a `figma:asset/*` import scheme resolved by a custom Vite plugin to `src/assets/`.
+- **`src/app/App.tsx` is the wiring seam**: routes, and the provider nesting (`AuthProvider` → `TripsProvider` around the shell; the per-trip providers `TripProvider`/`MembersProvider`/`ItinerariesProvider`/`ExpensesProvider`/`ChecklistProvider`/`PackingItemsProvider` wrap only the trip-detail route). Small adapter components here bridge the generated screens' callback props (`onSave`, `onBack`, `onPlanIt`) to router navigation.
+- **API layer is two-tiered**: `src/lib/api.ts` sets axios defaults (`baseURL`, `withCredentials`) and exposes bare `get/post/put/patch/deleteAPIData`; `src/hooks/useApi.ts` wraps them with **401 → `/auth/token/refresh/` → retry-once** logic. Contexts and screens should use `useApi`, not `lib/api` directly.
+- **`src/lib/adapters.ts` maps backend payloads onto the Figma UI's shapes** (member display names/initials, deterministic per-member colors, destination-keyword cover images). New API integration usually means adding an adapter here rather than reshaping the generated components.
+- **`src/config/index.ts`** mirrors backend `TextChoices` (trip/member/itinerary/checklist enums, split types, emoji icon maps) — the v2 equivalent of v1's `src/configs/`; keep both in sync with the backend.
+- `@/…` resolves to `frontend-v2/src` (Vite alias). `frontend-v2/guidelines/Guidelines.md` is an unfilled Figma Make template — ignore it. `MODALS_TOASTS_DIALOGS.md` documents the v2 overlay conventions.
 
 ## CI/CD
 
