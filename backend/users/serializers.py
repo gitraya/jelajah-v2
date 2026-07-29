@@ -71,3 +71,17 @@ class SetPasswordSerializer(serializers.Serializer):
     
 class ResendSetPasswordEmailSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
+
+class GoogleAuthSerializer(serializers.Serializer):
+    """Whatever Google Identity Services handed the frontend.
+
+    `code` comes from the popup authorization-code flow (the app's own button),
+    `credential` is an ID token straight from Google's rendered button / One Tap.
+    """
+    code = serializers.CharField(required=False, write_only=True, trim_whitespace=True)
+    credential = serializers.CharField(required=False, write_only=True, trim_whitespace=True)
+
+    def validate(self, attrs):
+        if bool(attrs.get('code')) == bool(attrs.get('credential')):
+            raise serializers.ValidationError('Provide either a "code" or a "credential".')
+        return attrs

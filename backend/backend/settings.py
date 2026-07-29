@@ -53,6 +53,10 @@ INSTALLED_APPS = [
     'checklist',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
 ]
 
 MIDDLEWARE = [
@@ -65,6 +69,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
 ]
 
 ROOT_URLCONF = 'backend.urls'
@@ -111,6 +116,35 @@ else:
     }
 
 AUTH_USER_MODEL = 'users.User'
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
+
+# django-allauth: only the social side is used. Authentication itself stays in
+# users/views.py (JWT in HTTP-only cookies), so allauth's own login/signup views
+# are never routed; allauth only verifies the Google token and owns SocialAccount.
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*']
+ACCOUNT_EMAIL_VERIFICATION = 'none'
+SOCIALACCOUNT_STORE_TOKENS = False
+SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        # Credentials come from env instead of a DB SocialApp row, so no
+        # django.contrib.sites / admin setup is needed to sign in with Google.
+        'APPS': [
+            {
+                'client_id': os.getenv('GOOGLE_OAUTH_CLIENT_ID', ''),
+                'secret': os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', ''),
+                'key': '',
+            },
+        ],
+        'SCOPE': ['profile', 'email'],
+    },
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

@@ -27,6 +27,11 @@ services:
         value: False
       - key: ALLOWED_HOSTS
         value: .onrender.com
+      # Sign in with Google (django-allauth). Set in the Render dashboard.
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
 
   # React Frontend
   - type: web

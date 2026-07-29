@@ -35,8 +35,8 @@ Jelajah is a collaborative travel-planning app (CS50W final project): Django RES
 
 ## Environment
 
-- `backend/.env` requires: `DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FRONTEND_URL`, `SENDGRID_API_KEY` (leave empty to skip email locally), `DEFAULT_FROM_EMAIL`. In production `DATABASE_URL` is read via `dj-database-url`; locally it falls back to a local PostgreSQL config.
-- `frontend/.env` and `frontend-v2/.env` each require: `VITE_BACKEND_URL` (e.g. `http://localhost:8000/api`). Both are referenced by `docker-compose.yml`, so a missing v2 `.env` breaks `make up`.
+- `backend/.env` requires: `DEBUG`, `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FRONTEND_URL`, `SENDGRID_API_KEY` (leave empty to skip email locally), `DEFAULT_FROM_EMAIL`. Optional: `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` (empty disables Google sign-in — `/api/auth/google/` then returns 503). In production `DATABASE_URL` is read via `dj-database-url`; locally it falls back to a local PostgreSQL config.
+- `frontend/.env` and `frontend-v2/.env` each require: `VITE_BACKEND_URL` (e.g. `http://localhost:8000/api`). Both are referenced by `docker-compose.yml`, so a missing v2 `.env` breaks `make up`. `frontend-v2/.env` also takes `VITE_GOOGLE_CLIENT_ID` (same client ID as the backend); empty hides the "Sign in with Google" button.
 
 ## Backend architecture
 
@@ -48,6 +48,7 @@ Jelajah is a collaborative travel-planning app (CS50W final project): Django RES
 - **Custom user + auth.** `AUTH_USER_MODEL = users.User` (extends `AbstractUser`, email is the login identifier). JWT via `djangorestframework-simplejwt` stored in **HTTP-only cookies**, not localStorage. Custom views `CookieTokenObtainPairView` / `CookieTokenRefreshView` / `CookieTokenBlacklistView` manage the cookies; logout blacklists the token. Auth endpoints are rate-limited.
 - **Members & roles.** `TripMember` (through model) gives users a role (ORGANIZER / CO_ORGANIZER / MEMBER) and status (PENDING / ACCEPTED / DECLINED / BLOCKED). Per-app permission classes (`IsTripAccessible`, `IsExpenseAccessible`, etc.) gate access by membership + role; public read is allowed only when the trip's `is_public` is set.
 - **Expense splitting.** `Expense` splits across members via the `ExpenseSplit` through model. Serializers validate that split amounts sum to the expense total; creation uses atomic transactions so a partial failure rolls back.
+- **Sign in with Google.** `django-allauth` (socialaccount only — its own login/signup views are never routed, and `django.contrib.sites` is not used) verifies the Google identity the SPA posts to `/api/auth/google/`, as either a `code` (popup flow; the view redeems it at Google with `redirect_uri=postmessage`) or a `credential` ID token; `GoogleAuthView` then issues the project's usual JWT cookies. The Google app credentials come from env via `SOCIALACCOUNT_PROVIDERS`, not a DB `SocialApp`. A Google identity whose email already has an account is linked to it; otherwise a passwordless user is created.
 - **Invitation flow.** Inviting an email with no account triggers a set-password email with a tokenized link (`/api/auth/set-password/<user_id>/<token>/`).
 
 ## Frontend v1 architecture
@@ -65,6 +66,7 @@ Mirrors v1's domain model deliberately — port patterns from `frontend/` rather
 - **`src/app/App.tsx` is the wiring seam**: routes, and the provider nesting (`AuthProvider` → `TripsProvider` around the shell; the per-trip providers `TripProvider`/`MembersProvider`/`ItinerariesProvider`/`ExpensesProvider`/`ChecklistProvider`/`PackingItemsProvider` wrap only the trip-detail route). Small adapter components here bridge the generated screens' callback props (`onSave`, `onBack`, `onPlanIt`) to router navigation.
 - **API layer is two-tiered**: `src/lib/api.ts` sets axios defaults (`baseURL`, `withCredentials`) and exposes bare `get/post/put/patch/deleteAPIData`; `src/hooks/useApi.ts` wraps them with **401 → `/auth/token/refresh/` → retry-once** logic. Contexts and screens should use `useApi`, not `lib/api` directly.
 - **`src/lib/adapters.ts` maps backend payloads onto the Figma UI's shapes** (member display names/initials, deterministic per-member colors, destination-keyword cover images). New API integration usually means adding an adapter here rather than reshaping the generated components.
+- **Google sign-in** lives in `src/components/auth/GoogleSignInButton.tsx` and `AuthContext.loginWithGoogle`. It uses the Google Identity Services **popup authorization-code** flow (`initCodeClient`) rather than Google's rendered button, so the trigger is a plain app `Button` that matches the rest of the UI; the returned code is posted to `/auth/google/`. It renders nothing unless `VITE_GOOGLE_CLIENT_ID` is set. Only v2 has this; `frontend/` is still password-only.
 - **`src/config/index.ts`** mirrors backend `TextChoices` (trip/member/itinerary/checklist enums, split types, emoji icon maps) — the v2 equivalent of v1's `src/configs/`; keep both in sync with the backend.
 - `@/…` resolves to `frontend-v2/src` (Vite alias). `frontend-v2/guidelines/Guidelines.md` is an unfilled Figma Make template — ignore it. `MODALS_TOASTS_DIALOGS.md` documents the v2 overlay conventions.
 
