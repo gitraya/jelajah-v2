@@ -237,12 +237,34 @@ SIMPLE_JWT = {
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Email settings for SendGrid
-EMAIL_BACKEND = "sendgrid_backend.SendgridBackend"
+# Email: Amazon SES is the primary provider, SendGrid the fallback. Both are
+# optional — a provider only joins EMAIL_BACKEND_CHAIN when its credentials are
+# present, and FailoverEmailBackend walks the chain until one accepts the mail.
+EMAIL_BACKEND = "backend.email_backends.FailoverEmailBackend"
+
+# Amazon SES (django-ses). Credentials may also come from an instance role, in
+# which case set AWS_SES_ENABLED=True without the access keys.
+AWS_SES_REGION_NAME = os.getenv("AWS_SES_REGION_NAME", "us-east-1")
+AWS_SES_REGION_ENDPOINT = os.getenv("AWS_SES_REGION_ENDPOINT", f"email.{AWS_SES_REGION_NAME}.amazonaws.com")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_SES_CONFIGURATION_SET = os.getenv("AWS_SES_CONFIGURATION_SET") or None
+AWS_SES_ENABLED = os.getenv("AWS_SES_ENABLED", "").lower() == "true" or bool(
+    AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+)
+
+# SendGrid
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
 SENDGRID_SANDBOX_MODE_IN_DEBUG = False
 SENDGRID_ECHO_TO_STDOUT = True if os.getenv("DEBUG") == "True" else False  # Optional: Print emails to console for dev
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")  # Use the email you verify with SendGrid
+
+EMAIL_BACKEND_CHAIN = []
+if AWS_SES_ENABLED:
+    EMAIL_BACKEND_CHAIN.append("django_ses.SESBackend")
+if SENDGRID_API_KEY:
+    EMAIL_BACKEND_CHAIN.append("sendgrid_backend.SendgridBackend")
+
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")  # Must be verified with every configured provider
 
 LOGGING = {
     'version': 1,
