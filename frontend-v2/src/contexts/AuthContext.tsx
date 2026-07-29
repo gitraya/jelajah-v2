@@ -62,6 +62,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // `code` is the authorization code from the Google popup; the backend redeems
+  // it with allauth and replies with the same auth cookies as /token/.
+  const loginWithGoogle = async (code: string) => {
+    try {
+      setError(null);
+      await postAPIData("/auth/google/", { code });
+      await checkAuth();
+      return true;
+    } catch (error) {
+      setError(getErrorMessage(error));
+      return false;
+    }
+  };
+
   const logout = async () => {
     try {
       setError(null);
@@ -135,6 +149,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         loading,
         error,
         login,
+        loginWithGoogle,
         logout,
         checkAuth,
         updateProfile,

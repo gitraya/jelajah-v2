@@ -15,6 +15,8 @@ import {
 } from "@/app/components/ui/card";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
+import { Separator } from "@/app/components/ui/separator";
+import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 import { useAuth } from "@/contexts/AuthContext";
 import { postAPIData } from "@/lib/api";
 import { getErrorMessage, validatePassword, validator } from "@/lib/utils";
@@ -31,7 +33,7 @@ export default function Register() {
     watch,
     formState: { errors },
   } = useForm<any>();
-  const { login, error: loginError } = useAuth();
+  const { login, loginWithGoogle, error: loginError } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,6 +65,20 @@ export default function Register() {
             "/resend-set-password-email?email=" + encodeURIComponent(data.email)
           );
         }, 3000);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignup = async (code: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const isLoggedIn = await loginWithGoogle(code);
+      if (isLoggedIn) {
+        navigate(redirectPath);
+        toast.success("Signed in with Google!");
       }
     } finally {
       setIsLoading(false);
@@ -275,6 +291,27 @@ export default function Register() {
                 {isLoading ? "Creating account..." : "Create account"}
               </Button>
             </form>
+
+            <div className="mt-6">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <Separator className="w-full" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">
+                    Or
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <GoogleSignInButton
+                  onCode={handleGoogleSignup}
+                  label="Sign up with Google"
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
 

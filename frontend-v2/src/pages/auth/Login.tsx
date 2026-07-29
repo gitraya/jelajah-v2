@@ -15,6 +15,7 @@ import {
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Separator } from "@/app/components/ui/separator";
+import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 import { useAuth } from "@/contexts/AuthContext";
 import { validator } from "@/lib/utils";
 
@@ -32,7 +33,7 @@ export default function Login() {
     setValue,
     formState: { errors },
   } = useForm<any>();
-  const { login, error } = useAuth();
+  const { login, loginWithGoogle, error } = useAuth();
   const query = new URLSearchParams(search);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +45,16 @@ export default function Login() {
     try {
       setIsLoading(true);
       const isLoggedIn = await login(data.email, data.password);
+      if (isLoggedIn) navigate(redirectPath);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async (code: string) => {
+    try {
+      setIsLoading(true);
+      const isLoggedIn = await loginWithGoogle(code);
       if (isLoggedIn) navigate(redirectPath);
     } finally {
       setIsLoading(false);
@@ -163,14 +174,22 @@ export default function Login() {
                 </div>
               </div>
 
-              <Button
-                variant="outline"
-                className="w-full mt-4"
-                onClick={handleDemoLogin}
-                disabled={isLoading}
-              >
-                Try Demo Account
-              </Button>
+              <div className="mt-4 space-y-3">
+                <GoogleSignInButton
+                  onCode={handleGoogleLogin}
+                  label="Sign in with Google"
+                  disabled={isLoading}
+                />
+
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleDemoLogin}
+                  disabled={isLoading}
+                >
+                  Try Demo Account
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
