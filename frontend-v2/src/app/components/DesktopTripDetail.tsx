@@ -1,24 +1,25 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
-  MapPin,
-  Users,
   Calendar,
+  MapPin,
+  Pencil,
+  Users,
   Wallet,
-  Plus,
-  CheckCircle,
-  Clock,
-  AlertCircle,
 } from "lucide-react";
 
-import { ITINERARY_TYPES_ICONS } from "@/config";
-import { useTrip } from "@/contexts/TripContext";
-import { useMembers } from "@/contexts/MembersContext";
-import { useItineraries } from "@/contexts/ItinerariesContext";
+import { BudgetTab } from "@/components/trip/BudgetTab";
+import { ChecklistTab } from "@/components/trip/ChecklistTab";
+import { ItineraryTab } from "@/components/trip/ItineraryTab";
+import { PackingTab } from "@/components/trip/PackingTab";
+import { TravelersTab } from "@/components/trip/TravelersTab";
+import { TripFormModal } from "@/components/modals/TripFormModal";
 import { useExpenses } from "@/contexts/ExpensesContext";
-import { colorFor, formatRp, memberInitials } from "@/lib/adapters";
-import { getMemberRoleColor, getMemberStatusColor } from "@/lib/colors";
-import { formatDate, getInitials } from "@/lib/utils";
+import { useMembers } from "@/contexts/MembersContext";
+import { useTrip } from "@/contexts/TripContext";
+import { coverImage, colorFor, formatRp, memberInitials } from "@/lib/adapters";
+import { getTripDifficultyColor, getTripStatusColor } from "@/lib/colors";
+import { formatDate } from "@/lib/utils";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 interface Props {
@@ -26,52 +27,29 @@ interface Props {
   onBack: () => void;
 }
 
-const statusIcon: Record<string, { icon: any; color: string }> = {
-  VISITED: { icon: CheckCircle, color: "#16B364" },
-  PLANNED: { icon: Clock, color: "#F5A623" },
-  SKIPPED: { icon: AlertCircle, color: "#E5605B" },
-};
-
-type DetailTab = "itinerary" | "budget" | "travelers";
-
-const memberName = (m: any) => {
-  const u = m.user || m;
-  return `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email || "Traveler";
-};
-
-const COVER = "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=1200&h=400&fit=crop&auto=format";
+const TABS = [
+  "itinerary",
+  "budget",
+  "packing",
+  "checklist",
+  "travelers",
+] as const;
+type DetailTab = (typeof TABS)[number];
 
 export function DesktopTripDetail({ onBack }: Props) {
   const [activeTab, setActiveTab] = useState<DetailTab>("itinerary");
-  const { trip, isLoading } = useTrip();
-  const { members, types: _t } = useMembers() as any;
-  const { types, locations } = useItineraries();
-  const { statistics: expenseStats, expenses } = useExpenses();
+  const [editOpen, setEditOpen] = useState(false);
 
-  const typeName = (typeId: any) =>
-    types?.find((t: any) => t.id === typeId)?.name || "Other";
+  const { trip, isLoading, updateTrip } = useTrip();
+  const { members } = useMembers();
+  const { statistics: expenseStats } = useExpenses();
 
-  // Group itinerary items by calendar day.
-  const days = useMemo(() => {
-    const groups: Record<string, any[]> = {};
-    (locations || []).forEach((item: any) => {
-      const key = item.visit_time
-        ? new Date(item.visit_time).toDateString()
-        : "Unscheduled";
-      (groups[key] = groups[key] || []).push(item);
-    });
-    return Object.entries(groups)
-      .sort(
-        (a, b) =>
-          new Date(a[0]).getTime() - new Date(b[0]).getTime() || 0
-      )
-      .map(([date, items], i) => ({ num: i + 1, date, items }));
-  }, [locations]);
+  // `is_editable` is computed server-side from ownership + role, so trust it
+  // rather than re-deriving permissions in the client.
+  const canEdit = Boolean(trip?.is_editable);
 
   const budget = Number(trip?.budget || 0);
-  const spent = Number(
-    expenseStats?.amount_spent ?? trip?.spent_budget ?? 0
-  );
+  const spent = Number(expenseStats?.amount_spent ?? trip?.spent_budget ?? 0);
   const spentPct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
   const travelerCount = members?.length || trip?.members_count || 0;
 
@@ -101,7 +79,7 @@ export function DesktopTripDetail({ onBack }: Props) {
       {/* Cover */}
       <div className="relative h-52 overflow-hidden bg-slate-700">
         <ImageWithFallback
-          src={COVER}
+          src={coverImage(trip)}
           alt={trip.title}
           className="w-full h-full object-cover opacity-80"
         />
@@ -115,6 +93,16 @@ export function DesktopTripDetail({ onBack }: Props) {
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
 
+        {canEdit ? (
+          <button
+            onClick={() => setEditOpen(true)}
+            className="absolute top-5 right-6 flex items-center gap-2 bg-white/20 backdrop-blur-sm text-white rounded-xl px-3 py-2 hover:bg-white/30 transition-colors"
+            style={{ fontSize: 13, fontWeight: 600 }}
+          >
+            <Pencil className="w-3.5 h-3.5" /> Edit trip
+          </button>
+        ) : null}
+
         <div className="absolute bottom-5 left-6">
           <div className="flex items-center gap-2 mb-1">
             <span
@@ -122,6 +110,22 @@ export function DesktopTripDetail({ onBack }: Props) {
               style={{ fontSize: 12, fontWeight: 600 }}
             >
               🧭 {trip.destination}
+            </span>
+            <span
+              className={`rounded-full px-2.5 py-1 ${getTripStatusColor(
+                trip.status
+              )}`}
+              style={{ fontSize: 11, fontWeight: 600 }}
+            >
+              {trip.status}
+            </span>
+            <span
+              className={`rounded-full px-2.5 py-1 ${getTripDifficultyColor(
+                trip.difficulty
+              )}`}
+              style={{ fontSize: 11, fontWeight: 600 }}
+            >
+              {trip.difficulty}
             </span>
           </div>
           <h1
@@ -156,7 +160,11 @@ export function DesktopTripDetail({ onBack }: Props) {
       {/* Stats strip */}
       <div className="mx-6 mt-5 bg-secondary rounded-2xl px-6 py-4 grid grid-cols-4 gap-4">
         {[
-          { icon: Calendar, label: "Dates", value: trip.dates || formatDate(trip.start_date) },
+          {
+            icon: Calendar,
+            label: "Dates",
+            value: trip.dates || formatDate(trip.start_date),
+          },
           { icon: Users, label: "Travelers", value: `${travelerCount} people` },
           { icon: Wallet, label: "Budget", value: formatRp(budget) },
           { icon: MapPin, label: "Spent", value: `${spentPct}% of budget` },
@@ -185,7 +193,7 @@ export function DesktopTripDetail({ onBack }: Props) {
 
       {/* Tabs */}
       <div className="flex gap-1 mx-6 mt-5 bg-muted rounded-xl p-1 w-fit">
-        {(["itinerary", "budget", "travelers"] as DetailTab[]).map((t) => (
+        {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
@@ -202,221 +210,21 @@ export function DesktopTripDetail({ onBack }: Props) {
       </div>
 
       <div className="px-6 py-5">
-        {/* ITINERARY */}
-        {activeTab === "itinerary" && (
-          <div className="space-y-6">
-            {days.length === 0 && (
-              <p className="text-muted-foreground" style={{ fontSize: 14 }}>
-                No itinerary items yet.
-              </p>
-            )}
-            {days.map((day) => (
-              <div key={day.num}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-7 h-7 rounded-xl bg-primary flex items-center justify-center shrink-0">
-                    <span className="text-white" style={{ fontWeight: 800, fontSize: 12 }}>
-                      {day.num}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-foreground" style={{ fontWeight: 700, fontSize: 14 }}>
-                      Day {day.num}
-                    </p>
-                    <p className="text-muted-foreground" style={{ fontSize: 12 }}>
-                      {day.date === "Unscheduled"
-                        ? "Unscheduled"
-                        : formatDate(day.items[0]?.visit_time)}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2 ml-10">
-                  {day.items.map((stop: any) => {
-                    const si = statusIcon[stop.status] || statusIcon.PLANNED;
-                    const SIcon = si.icon;
-                    const tName = typeName(stop.type);
-                    return (
-                      <div
-                        key={stop.id}
-                        className="bg-card border border-border rounded-xl px-4 py-3 flex items-start gap-3 hover:border-primary/20 transition-colors"
-                      >
-                        <span
-                          className="text-primary shrink-0 mt-0.5"
-                          style={{ fontSize: 12, fontWeight: 600, minWidth: 52 }}
-                        >
-                          {stop.visit_time
-                            ? new Date(stop.visit_time).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "—"}
-                        </span>
-                        <span className="text-lg shrink-0">
-                          {ITINERARY_TYPES_ICONS[tName] || "📍"}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-foreground" style={{ fontWeight: 600, fontSize: 14 }}>
-                            {stop.name}
-                          </p>
-                          <p className="text-muted-foreground" style={{ fontSize: 12 }}>
-                            {stop.address || stop.estimated_time || tName}
-                          </p>
-                        </div>
-                        <SIcon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: si.color }} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* BUDGET */}
-        {activeTab === "budget" && (
-          <div>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              {[
-                { label: "Total budget", value: formatRp(budget), sub: `${travelerCount} travelers`, color: "#16213E" },
-                {
-                  label: "Per person",
-                  value: formatRp(travelerCount ? budget / travelerCount : 0),
-                  sub: "estimated",
-                  color: "#16213E",
-                },
-                {
-                  label: "Spent so far",
-                  value: formatRp(spent),
-                  sub: `${spentPct}% of budget`,
-                  color: spentPct > 80 ? "#E5605B" : "#16B364",
-                },
-              ].map((s) => (
-                <div key={s.label} className="bg-card border border-border rounded-2xl p-4">
-                  <p className="text-muted-foreground mb-1" style={{ fontSize: 12 }}>
-                    {s.label}
-                  </p>
-                  <p style={{ fontWeight: 800, fontSize: 20, color: s.color, letterSpacing: "-0.03em" }}>
-                    {s.value}
-                  </p>
-                  <p className="text-muted-foreground" style={{ fontSize: 11 }}>
-                    {s.sub}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-card border border-border rounded-2xl p-5 mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-foreground" style={{ fontWeight: 600, fontSize: 14 }}>
-                  Budget usage
-                </p>
-                <p className="text-muted-foreground" style={{ fontSize: 13 }}>
-                  {spentPct}% used
-                </p>
-              </div>
-              <div className="h-3 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.min(100, spentPct)}%`,
-                    background: spentPct > 80 ? "#E5605B" : "#16B364",
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <p className="text-foreground mb-4" style={{ fontWeight: 700, fontSize: 15 }}>
-                Spending by member
-              </p>
-              <div className="space-y-3">
-                {(members || []).map((m: any) => (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0"
-                      style={{
-                        background: colorFor(m.user?.email || String(m.id)),
-                        fontSize: 10,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {memberInitials(m)}
-                    </div>
-                    <p className="flex-1 text-foreground" style={{ fontSize: 14 }}>
-                      {memberName(m)}
-                    </p>
-                    <span className="text-foreground" style={{ fontSize: 13, fontWeight: 600 }}>
-                      {formatRp(m.expenses)}
-                    </span>
-                  </div>
-                ))}
-                {(!members || members.length === 0) && (
-                  <p className="text-muted-foreground" style={{ fontSize: 13 }}>
-                    No members yet.
-                  </p>
-                )}
-              </div>
-              {expenses?.length > 0 && (
-                <p className="text-muted-foreground mt-4" style={{ fontSize: 12 }}>
-                  {expenses.length} expense{expenses.length > 1 ? "s" : ""} recorded
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TRAVELERS */}
+        {activeTab === "itinerary" && <ItineraryTab canEdit={canEdit} />}
+        {activeTab === "budget" && <BudgetTab trip={trip} canEdit={canEdit} />}
+        {activeTab === "packing" && <PackingTab canEdit={canEdit} />}
+        {activeTab === "checklist" && <ChecklistTab canEdit={canEdit} />}
         {activeTab === "travelers" && (
-          <div>
-            <div className="grid grid-cols-2 gap-4 mb-5">
-              {(members || []).map((m: any) => (
-                <div
-                  key={m.id}
-                  className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3"
-                >
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0"
-                    style={{
-                      background: colorFor(m.user?.email || String(m.id)),
-                      fontSize: 14,
-                      fontWeight: 800,
-                    }}
-                  >
-                    {getInitials(memberName(m)).slice(0, 2)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-foreground truncate" style={{ fontWeight: 600, fontSize: 14 }}>
-                      {memberName(m)}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 ${getMemberRoleColor(
-                          m.role
-                        )}`}
-                        style={{ fontSize: 10, fontWeight: 600 }}
-                      >
-                        {m.role}
-                      </span>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 ${getMemberStatusColor(
-                          m.status
-                        )}`}
-                        style={{ fontSize: 10, fontWeight: 600 }}
-                      >
-                        {m.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {(!members || members.length === 0) && (
-                <p className="text-muted-foreground" style={{ fontSize: 14 }}>
-                  No travelers yet.
-                </p>
-              )}
-            </div>
-          </div>
+          <TravelersTab trip={trip} canEdit={canEdit} />
         )}
       </div>
+
+      <TripFormModal
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        trip={trip}
+        onSave={(payload) => updateTrip(payload)}
+      />
     </div>
   );
 }

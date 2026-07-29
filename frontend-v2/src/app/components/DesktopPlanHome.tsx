@@ -1,5 +1,11 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sparkles, Pencil, Copy, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router";
+
+import { TripFormModal } from "@/components/modals/TripFormModal";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTrips } from "@/contexts/TripsContext";
+import { coverImage, formatRp, tripBucket } from "@/lib/adapters";
 
 interface Props {
   onPlanIt: (query: string) => void;
@@ -12,48 +18,51 @@ const suggestions = [
   { label: "Budget Southeast Asia", icon: "✈️" },
 ];
 
-const tripCards = [
-  {
-    id: "canada",
-    name: "Canada Trip",
-    flag: "🇨🇦",
-    date: "24 Jul",
-    progress: 72,
-    img: "https://images.unsplash.com/photo-1517935706615-2717063c2225?w=600&h=400&fit=crop&auto=format",
-    color: "#1a6b8a",
-  },
-  {
-    id: "osaka",
-    name: "Osaka Foodie",
-    flag: "🇯🇵",
-    date: "12 Sep",
-    progress: 45,
-    img: "https://images.unsplash.com/photo-1659094438327-493ee9cc0c4c?w=600&h=400&fit=crop&auto=format",
-    color: "#8b3a4a",
-  },
-  {
-    id: "bangkok",
-    name: "Bangkok Trip",
-    flag: "🇹🇭",
-    date: "5 Oct",
-    progress: 20,
-    img: "https://images.unsplash.com/photo-1563492065599-3520f775eeed?w=600&h=400&fit=crop&auto=format",
-    color: "#7b5e1a",
-  },
-];
+const greeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+};
 
 export function DesktopPlanHome({ onPlanIt }: Props) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const {
+    myTrips,
+    fetchMyTrips,
+    tripsStatistics,
+    fetchTripsStatistics,
+    createTrip,
+  } = useTrips();
   const [query, setQuery] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+
+  useEffect(() => {
+    fetchMyTrips();
+    fetchTripsStatistics();
+  }, [fetchMyTrips, fetchTripsStatistics]);
+
+  // "Continue planning" surfaces the trips that aren't finished yet.
+  const activeTrips = useMemo(
+    () => (myTrips || []).filter((t: any) => tripBucket(t) !== "past").slice(0, 3),
+    [myTrips]
+  );
 
   const handleSubmit = () => {
     const q = query.trim() || "5 days in Osaka with my 3 friends, food-focused, mid budget";
     onPlanIt(q);
   };
 
+  const mine = tripsStatistics?.my_trips || {};
+
   return (
     <div className="flex-1 overflow-y-auto px-10 py-8">
       {/* Greeting */}
-      <p className="text-muted-foreground mb-2" style={{ fontSize: 14, fontWeight: 500 }}>Good evening, Raya</p>
+      <p className="text-muted-foreground mb-2" style={{ fontSize: 14, fontWeight: 500 }}>
+        {greeting()}
+        {user?.first_name ? `, ${user.first_name}` : ""}
+      </p>
 
       {/* Headline */}
       <h1 className="text-foreground mb-6" style={{ fontWeight: 800, fontSize: 38, letterSpacing: "-0.03em", lineHeight: 1.2 }}>
@@ -108,7 +117,10 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
 
       {/* Path cards */}
       <div className="grid grid-cols-2 gap-4 mb-9">
-        <div className="bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer group">
+        <div
+          onClick={() => setFormOpen(true)}
+          className="bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer group"
+        >
           <div className="w-10 h-10 bg-secondary rounded-xl flex items-center justify-center mb-3">
             <Pencil className="w-5 h-5 text-primary" strokeWidth={2} />
           </div>
@@ -128,36 +140,84 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
         </div>
       </div>
 
+      {/* Your numbers, from /trips/statistics/ */}
+      <div className="grid grid-cols-4 gap-4 mb-9">
+        {[
+          { label: "Your trips", value: mine.total ?? 0 },
+          { label: "Ongoing", value: mine.ongoing ?? 0 },
+          { label: "Upcoming", value: mine.upcoming ?? 0 },
+          { label: "Planned budget", value: formatRp(mine.total_budget ?? 0) },
+        ].map((s) => (
+          <div key={s.label} className="bg-card border border-border rounded-2xl p-4">
+            <p className="text-muted-foreground mb-1" style={{ fontSize: 12 }}>
+              {s.label}
+            </p>
+            <p
+              className="text-foreground"
+              style={{ fontWeight: 800, fontSize: 20, letterSpacing: "-0.03em" }}
+            >
+              {s.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
       {/* Continue planning */}
       <div>
         <p className="text-foreground mb-4" style={{ fontWeight: 700, fontSize: 17 }}>Continue planning</p>
-        <div className="grid grid-cols-3 gap-4">
-          {tripCards.map((trip) => (
-            <div key={trip.id} className="bg-card rounded-2xl overflow-hidden border border-border hover:shadow-md transition-all cursor-pointer group">
-              <div className="relative h-40 overflow-hidden" style={{ background: trip.color }}>
-                <img
-                  src={trip.img}
-                  alt={trip.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                {/* Flag pill */}
-                <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1 flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: "#16213E" }}>
-                  <span>{trip.flag}</span>
-                  {trip.name.split(" ")[0]}
+        {activeTrips.length === 0 ? (
+          <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+            No trips in progress yet — start one above.
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-4">
+            {activeTrips.map((trip: any) => {
+              const budget = Number(trip.budget || 0);
+              const spent = Number(trip.spent_budget || 0);
+              const progress =
+                budget > 0 ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
+              return (
+                <div
+                  key={trip.id}
+                  onClick={() => navigate(`/trips/${trip.id}`)}
+                  className="bg-card rounded-2xl overflow-hidden border border-border hover:shadow-md transition-all cursor-pointer group"
+                >
+                  <div className="relative h-40 overflow-hidden bg-slate-200">
+                    <img
+                      src={coverImage(trip)}
+                      alt={trip.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1 flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: "#16213E" }}>
+                      <span>🧭</span>
+                      {trip.destination}
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                      <div className="h-full bg-white rounded-full" style={{ width: `${progress}%` }} />
+                    </div>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-foreground truncate" style={{ fontWeight: 600, fontSize: 14 }}>{trip.title}</p>
+                    <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+                      {trip.dates} · {progress}% of budget
+                    </p>
+                  </div>
                 </div>
-                {/* Progress bar */}
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                  <div className="h-full bg-white rounded-full" style={{ width: `${trip.progress}%` }} />
-                </div>
-              </div>
-              <div className="p-3">
-                <p className="text-foreground" style={{ fontWeight: 600, fontSize: 14 }}>{trip.name}</p>
-                <p className="text-muted-foreground" style={{ fontSize: 12 }}>{trip.date} · {trip.progress}% ready</p>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      <TripFormModal
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        onSave={async (payload) => {
+          const trip = await createTrip(payload);
+          navigate(`/trips/${trip.id}`);
+          return trip;
+        }}
+      />
     </div>
   );
 }

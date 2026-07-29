@@ -12,6 +12,7 @@ import { Onboarding } from "./components/Onboarding";
 import AppShell from "@/components/layouts/AppShell";
 import ProtectedLayout from "@/components/layouts/ProtectedLayout";
 import Login from "@/pages/auth/Login";
+import Profile from "@/pages/Profile";
 import Register from "@/pages/auth/Register";
 import ResendSetPasswordEmail from "@/pages/auth/ResendSetPasswordEmail";
 import SetPassword from "@/pages/auth/SetPassword";
@@ -24,6 +25,7 @@ import { ItinerariesProvider } from "@/contexts/ItinerariesContext";
 import { ExpensesProvider } from "@/contexts/ExpensesContext";
 import { ChecklistProvider } from "@/contexts/ChecklistContext";
 import { PackingItemsProvider } from "@/contexts/PackingItemsContext";
+import { TagsProvider } from "@/contexts/TagsContext";
 
 function PlanHomePage() {
   const navigate = useNavigate();
@@ -88,19 +90,24 @@ export default function App() {
         {/* App shell routes */}
         <Route
           element={
+            // TagsProvider sits here because the trip form (reachable from the
+            // home, trips, and trip-detail screens) picks tags from it.
             <TripsProvider>
-              <AppShell />
+              <TagsProvider>
+                <AppShell />
+              </TagsProvider>
             </TripsProvider>
           }
         >
           <Route index element={<PlanHomePage />} />
           <Route path="/explore" element={<DesktopExplore />} />
           <Route path="/ai-builder" element={<AIBuilderPage />} />
-          <Route path="/buddies" element={<DesktopBuddies />} />
           <Route path="/trips/:id" element={<TripDetailPage />} />
 
           <Route element={<ProtectedLayout />}>
             <Route path="/trips" element={<DesktopTrips />} />
+            <Route path="/buddies" element={<DesktopBuddies />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
         </Route>
 

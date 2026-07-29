@@ -202,6 +202,31 @@ export const ChecklistProvider = ({ children }: { children: ReactNode }) => {
     setIsDataMustRefreshed(Math.random());
   }, []);
 
+  // due_date drives the server-assigned category, so an edit can move the item
+  // between PRE_TRIP/DURING_TRIP/POST_TRIP — resync instead of guessing.
+  const updateChecklist = useCallback(
+    async (id: string, data: any, tripId: string = defaultTripId as string) => {
+      try {
+        setError(null);
+        const response = await patchRequest(
+          `/trips/${tripId}/checklist/items/${id}/`,
+          data
+        );
+        refreshData();
+        return response.data;
+      } catch (error) {
+        setError(
+          getErrorMessage(
+            error,
+            "An error occurred while updating the checklist item. Please try again later."
+          )
+        );
+        throw error;
+      }
+    },
+    [refreshData]
+  );
+
   useEffect(() => {
     if (!defaultTripId) return;
     setIsLoading(true);
@@ -224,6 +249,7 @@ export const ChecklistProvider = ({ children }: { children: ReactNode }) => {
         setError,
         setSelectedCategory,
         createChecklist,
+        updateChecklist,
         deleteItem,
         toggleCompleted,
         refreshData,

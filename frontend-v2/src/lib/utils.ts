@@ -135,9 +135,10 @@ export const validatePassword = (password = "") => {
 };
 
 // Adds the duration_label + "dates" display fields v1 attaches to trips.
-export const withTripLabels = <T extends Record<string, any>>(trip: T): T => {
+export const withTripLabels = <T extends Record<string, any>>(
+  trip: T
+): T & { duration_label: string; dates: string } => {
   const duration = trip.duration || 0;
-  trip.duration_label = `${duration} ${duration > 1 ? "days" : "day"}`;
   const fmt = (d?: string, withYear = false) =>
     d
       ? new Date(d).toLocaleDateString("en-US", {
@@ -146,6 +147,9 @@ export const withTripLabels = <T extends Record<string, any>>(trip: T): T => {
           ...(withYear ? { year: "numeric" } : {}),
         })
       : "";
-  trip.dates = `${fmt(trip.start_date)}-${fmt(trip.end_date, true)}`;
-  return trip;
+  return {
+    ...trip,
+    duration_label: `${duration} ${duration > 1 ? "days" : "day"}`,
+    dates: `${fmt(trip.start_date)}-${fmt(trip.end_date, true)}`,
+  };
 };

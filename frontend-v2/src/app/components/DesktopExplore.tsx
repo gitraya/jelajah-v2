@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, MapPin, Users, Clock, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 
 import { useTrips } from "@/contexts/TripsContext";
+import { getErrorMessage } from "@/lib/utils";
 import { tripToDestination } from "@/lib/adapters";
 import { getTripDifficultyColor } from "@/lib/colors";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
@@ -11,10 +13,25 @@ const categories = ["All", "Easy", "Moderate", "Challenging"];
 
 export function DesktopExplore() {
   const navigate = useNavigate();
-  const { publicTrips, fetchPublicTrips } = useTrips();
+  const { publicTrips, fetchPublicTrips, joinTrip } = useTrips();
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+
+  const handleJoin = async (dest: any) => {
+    setJoiningId(dest.id);
+    try {
+      await joinTrip(dest.id);
+      toast.success("Join request sent", {
+        description: `The organizer of "${dest.name}" will review your request.`,
+      });
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not join this trip"));
+    } finally {
+      setJoiningId(null);
+    }
+  };
 
   useEffect(() => {
     setIsLoading(true);
@@ -174,9 +191,43 @@ export function DesktopExplore() {
                       {dest.budget}
                     </span>
                   </div>
-                  <span className="text-primary flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600 }}>
-                    View <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {dest.raw.is_member ? (
+                      <span
+                        className="text-muted-foreground"
+                        style={{ fontSize: 12, fontWeight: 600 }}
+                      >
+                        Joined
+                      </span>
+                    ) : dest.raw.join_requested ? (
+                      <span
+                        className="text-muted-foreground"
+                        style={{ fontSize: 12, fontWeight: 600 }}
+                      >
+                        Requested
+                      </span>
+                    ) : dest.raw.is_joinable ? (
+                      <button
+                        type="button"
+                        disabled={joiningId === dest.id}
+                        onClick={(e) => {
+                          // The whole card navigates; keep the click here.
+                          e.stopPropagation();
+                          handleJoin(dest);
+                        }}
+                        className="bg-secondary text-secondary-foreground rounded-lg px-3 py-1 hover:bg-primary hover:text-white transition-colors disabled:opacity-50"
+                        style={{ fontSize: 12, fontWeight: 600 }}
+                      >
+                        {joiningId === dest.id ? "Joining…" : "Join"}
+                      </button>
+                    ) : null}
+                    <span
+                      className="text-primary flex items-center gap-1"
+                      style={{ fontSize: 12, fontWeight: 600 }}
+                    >
+                      View <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

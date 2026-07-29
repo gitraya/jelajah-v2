@@ -115,25 +115,31 @@ function Sidebar() {
       <div className="px-2 pt-3 border-t border-border mt-3">
         {user ? (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
-              <span className="text-white text-xs" style={{ fontWeight: 700 }}>
-                {getInitials(userName || "")}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <p
-                className="text-foreground truncate"
-                style={{ fontSize: 12, fontWeight: 600 }}
-              >
-                {userName}
-              </p>
-              <p
-                className="text-muted-foreground truncate"
-                style={{ fontSize: 10 }}
-              >
-                {user.email}
-              </p>
-            </div>
+            <button
+              onClick={() => navigate("/profile")}
+              title="Your profile"
+              className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg hover:bg-muted transition-colors py-1 px-1 -mx-1"
+            >
+              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
+                <span className="text-white text-xs" style={{ fontWeight: 700 }}>
+                  {getInitials(userName || "")}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p
+                  className="text-foreground truncate"
+                  style={{ fontSize: 12, fontWeight: 600 }}
+                >
+                  {userName}
+                </p>
+                <p
+                  className="text-muted-foreground truncate"
+                  style={{ fontSize: 10 }}
+                >
+                  {user.email}
+                </p>
+              </div>
+            </button>
             <button
               onClick={() => logout()}
               title="Log out"

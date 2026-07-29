@@ -23,7 +23,8 @@ export const useTrip = () => {
 
 export const TripProvider = ({ children }: { children: ReactNode }) => {
   const { id: defaultTripId } = useParams();
-  const { getRequest } = useApi();
+  const { getRequest, patchRequest } = useApi();
+  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [trip, setTrip] = useState<any>(null);
   const [itinerarySummary, setItinerarySummary] = useState<any[]>([]);
@@ -53,6 +54,26 @@ export const TripProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  const updateTrip = useCallback(
+    async (data: any, tripId: string = defaultTripId as string) => {
+      try {
+        setError(null);
+        const response = await patchRequest(`/trips/${tripId}/`, data);
+        setTrip(withTripLabels(response.data));
+        return response.data;
+      } catch (error) {
+        setError(
+          getErrorMessage(
+            error,
+            "An error occurred while updating the trip. Please try again later."
+          )
+        );
+        throw error;
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     if (!defaultTripId) return;
     fetchItinerarySummary(defaultTripId);
@@ -65,8 +86,11 @@ export const TripProvider = ({ children }: { children: ReactNode }) => {
         itinerarySummary,
         trip,
         isLoading,
+        error,
+        setError,
         fetchTripDetails,
         fetchItinerarySummary,
+        updateTrip,
       }}
     >
       {children}

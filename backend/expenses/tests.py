@@ -78,3 +78,61 @@ class ExpenseAPITests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertIn("trip_budget", resp.data)
         self.assertIn("amount_spent", resp.data)
+
+    def test_update_expense_reuses_existing_splits(self):
+        """A split's id is read-only, so update() has to reconcile on member.
+
+        Matching on id instead recreated every split and violated the unique
+        (expense, member) constraint, making any edit a 500.
+        """
+        other_user = User.objects.create_user(email="api_exp2@example.com", password="testpass123")
+        other_member = TripMember.objects.create(
+            trip=self.trip, user=other_user, role=MemberRole.MEMBER, status=MemberStatus.ACCEPTED
+        )
+        url = reverse("expense-item-list", kwargs={"trip_id": self.trip.id})
+        create = self.client.post(url, {
+            "title": "Dinner",
+            "amount": "300000.00",
+            "paid_by_id": str(self.member.id),
+            "category_id": str(self.category.id),
+            "splits": [
+                {"member_id": str(self.member.id), "amount": "150000.00", "paid": True},
+                {"member_id": str(other_member.id), "amount": "150000.00", "paid": False},
+            ],
+        }, format="json")
+        self.assertEqual(create.status_code, status.HTTP_201_CREATED)
+        expense_id = create.data["id"]
+        detail = reverse("expense-item-detail", kwargs={"trip_id": self.trip.id, "pk": expense_id})
+
+        # Same members, different amounts: must update in place, not recreate.
+        resp = self.client.put(detail, {
+            "title": "Dinner (updated)",
+            "amount": "300000.01",
+            "paid_by_id": str(self.member.id),
+            "category_id": str(self.category.id),
+            "splits": [
+                {"member_id": str(self.member.id), "amount": "200000.01", "paid": True},
+                {"member_id": str(other_member.id), "amount": "100000.00", "paid": False},
+            ],
+        }, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        expense = Expense.objects.get(id=expense_id)
+        self.assertEqual(expense.splits.count(), 2)
+        self.assertEqual(
+            expense.splits.get(member=self.member).amount, Decimal("200000.01")
+        )
+
+        # Dropping a member removes only that split.
+        resp = self.client.put(detail, {
+            "title": "Dinner (solo)",
+            "amount": "300000.01",
+            "paid_by_id": str(self.member.id),
+            "category_id": str(self.category.id),
+            "splits": [
+                {"member_id": str(self.member.id), "amount": "300000.01", "paid": True},
+            ],
+        }, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        expense.refresh_from_db()
+        self.assertEqual(expense.splits.count(), 1)
+        self.assertEqual(expense.splits.get().member, self.member)

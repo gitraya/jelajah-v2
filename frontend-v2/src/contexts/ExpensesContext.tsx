@@ -48,7 +48,7 @@ export const useExpenses = () => {
 
 export const ExpensesProvider = ({ children }: { children: ReactNode }) => {
   const { id: defaultTripId } = useParams();
-  const { getRequest, deleteRequest, postRequest } = useApi();
+  const { getRequest, deleteRequest, postRequest, putRequest } = useApi();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -146,6 +146,31 @@ export const ExpensesProvider = ({ children }: { children: ReactNode }) => {
     setIsDataMustRefreshed(Math.random());
   }, []);
 
+  // PUT rather than PATCH: the serializer revalidates that splits sum to the
+  // amount, and it only reconciles splits when the full list is supplied.
+  const updateExpense = useCallback(
+    async (id: string, data: any, tripId: string = defaultTripId as string) => {
+      try {
+        setError("");
+        const response = await putRequest(
+          `/trips/${tripId}/expenses/items/${id}/`,
+          data
+        );
+        refreshData();
+        return response.data;
+      } catch (error) {
+        setError(
+          getErrorMessage(
+            error,
+            "An error occurred while updating the expense. Please try again later."
+          )
+        );
+        throw error;
+      }
+    },
+    [refreshData]
+  );
+
   useEffect(() => {
     fetchCategories();
   }, []);
@@ -169,6 +194,7 @@ export const ExpensesProvider = ({ children }: { children: ReactNode }) => {
         statistics,
         setError,
         createExpense,
+        updateExpense,
         deleteExpense,
         refreshData,
       }}

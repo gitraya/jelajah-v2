@@ -20,7 +20,7 @@ export const colorFor = (seed: string) => {
   return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
 };
 
-const memberName = (m: any) => {
+export const memberName = (m: any) => {
   const u = m.user || m;
   const name = `${u.first_name || ""} ${u.last_name || ""}`.trim();
   return name || u.email || "Traveler";

@@ -7,7 +7,7 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "react-router";
 
-import { getAPIData, postAPIData } from "@/lib/api";
+import { getAPIData, patchAPIData, postAPIData } from "@/lib/api";
 import { getErrorMessage } from "@/lib/utils";
 
 const AuthContext = createContext<any>(null);
@@ -95,6 +95,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // /auth/me/ is a RetrieveUpdate view, so the signed-in user edits themselves
+  // through the same endpoint checkAuth reads.
+  const updateProfile = async (data: any) => {
+    try {
+      setError(null);
+      const response = await patchAPIData("/auth/me/", data);
+      setUser(response.data);
+      return response.data;
+    } catch (error) {
+      setError(getErrorMessage(error));
+      throw error;
+    }
+  };
+
   const resendSetPasswordEmail = async (email: string) => {
     try {
       setError(null);
@@ -123,6 +137,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         logout,
         checkAuth,
+        updateProfile,
         setPassword,
         resendSetPasswordEmail,
         isAuthenticated,

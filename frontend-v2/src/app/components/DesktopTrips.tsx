@@ -11,31 +11,12 @@ import {
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
-import { Button } from "./ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 
+import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
+import { TripFormModal } from "@/components/modals/TripFormModal";
 import { useTrips } from "@/contexts/TripsContext";
-import { useApi } from "@/hooks/useApi";
 import { tripToCard } from "@/lib/adapters";
-import { getErrorMessage } from "@/lib/utils";
 
 type TripFilter = "all" | "upcoming" | "planning" | "past";
 
@@ -50,19 +31,15 @@ const statusConfig: Record<
 
 export function DesktopTrips() {
   const navigate = useNavigate();
-  const { myTrips, fetchMyTrips, setMyTrips } = useTrips();
-  const { patchRequest, deleteRequest } = useApi();
+  const { myTrips, fetchMyTrips, createTrip, updateTrip, deleteTrip } =
+    useTrips();
 
   const [filter, setFilter] = useState<TripFilter>("all");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [editDialog, setEditDialog] = useState<{ open: boolean; trip: any }>({
-    open: false,
-    trip: null,
-  });
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; trip: any }>(
-    { open: false, trip: null }
-  );
-  const [tripName, setTripName] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  /** The raw trip being edited; null means the form is in create mode. */
+  const [editing, setEditing] = useState<any>(null);
+  const [deleting, setDeleting] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -75,56 +52,43 @@ export function DesktopTrips() {
     (t: any) => filter === "all" || t.status === filter
   );
 
+  const openCreate = () => {
+    setEditing(null);
+    setFormOpen(true);
+  };
+
   const handleMenuAction = (action: string, trip: any) => {
     setOpenMenu(null);
     switch (action) {
       case "Edit trip":
-        setTripName(trip.name);
-        setEditDialog({ open: true, trip });
+        // Cards are display projections; the form needs the raw API object.
+        setEditing(trip.raw);
+        setFormOpen(true);
         break;
       case "Open":
         navigate(`/trips/${trip.id}`);
         break;
       case "Delete":
-        setDeleteDialog({ open: true, trip });
+        setDeleting(trip);
         break;
     }
   };
 
-  const handleEditSave = async () => {
-    if (!tripName.trim() || !editDialog.trip) return;
-    try {
-      await patchRequest(`/trips/${editDialog.trip.id}/`, { title: tripName });
-      setMyTrips((prev: any[]) =>
-        prev.map((t) =>
-          t.id === editDialog.trip.id ? { ...t, title: tripName } : t
-        )
-      );
-      toast.success("Trip updated!", {
-        description: `Renamed to "${tripName}"`,
-      });
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to update trip"));
-    } finally {
-      setEditDialog({ open: false, trip: null });
-      setTripName("");
-    }
+  const handleSave = async (payload: Record<string, any>) => {
+    const saved = editing
+      ? await updateTrip(editing.id, payload)
+      : await createTrip(payload);
+    toast.success(editing ? "Trip updated" : "Trip created", {
+      description: saved?.title,
+    });
+    return saved;
   };
 
   const handleDelete = async () => {
-    if (!deleteDialog.trip) return;
-    const trip = deleteDialog.trip;
-    try {
-      await deleteRequest(`/trips/${trip.id}/`);
-      setMyTrips((prev: any[]) => prev.filter((t) => t.id !== trip.id));
-      toast.success("Trip deleted", {
-        description: `"${trip.name}" has been removed`,
-      });
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to delete trip"));
-    } finally {
-      setDeleteDialog({ open: false, trip: null });
-    }
+    await deleteTrip(deleting.id);
+    toast.success("Trip deleted", {
+      description: `"${deleting.name}" has been removed`,
+    });
   };
 
   return (
@@ -143,7 +107,7 @@ export function DesktopTrips() {
           </p>
         </div>
         <button
-          onClick={() => navigate("/")}
+          onClick={openCreate}
           className="bg-primary text-white rounded-2xl px-5 py-2.5 flex items-center gap-2 hover:bg-[#13a058] transition-colors"
           style={{ fontSize: 14, fontWeight: 600 }}
         >
@@ -339,7 +303,7 @@ export function DesktopTrips() {
             Start planning your next adventure
           </p>
           <button
-            onClick={() => navigate("/")}
+            onClick={openCreate}
             className="bg-primary text-white rounded-2xl px-6 py-3 flex items-center gap-2"
             style={{ fontSize: 14, fontWeight: 600 }}
           >
@@ -348,66 +312,21 @@ export function DesktopTrips() {
         </div>
       )}
 
-      <Dialog
-        open={editDialog.open}
-        onOpenChange={(open) => setEditDialog({ open, trip: editDialog.trip })}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Trip</DialogTitle>
-            <DialogDescription>Update your trip name</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium">Trip Name</label>
-              <input
-                type="text"
-                value={tripName}
-                onChange={(e) => setTripName(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg mt-1 focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Enter trip name"
-                onKeyDown={(e) => e.key === "Enter" && handleEditSave()}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEditDialog({ open: false, trip: null })}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleEditSave}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TripFormModal
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        trip={editing}
+        onSave={handleSave}
+      />
 
-      <AlertDialog
-        open={deleteDialog.open}
-        onOpenChange={(open) =>
-          setDeleteDialog({ open, trip: deleteDialog.trip })
-        }
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete trip?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete "
-              {deleteDialog.trip?.name}" and remove all associated itineraries,
-              expenses, and shared access.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
-              onClick={handleDelete}
-            >
-              Delete Trip
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Delete trip?"
+        confirmLabel="Delete trip"
+        description={`This permanently deletes "${deleting?.name}" along with its itineraries, expenses, and shared access.`}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

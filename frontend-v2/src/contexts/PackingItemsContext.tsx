@@ -61,6 +61,7 @@ export const PackingItemsProvider = ({ children }: { children: ReactNode }) => {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [categories, setCategories] = useState<any[]>([]);
   const [statistics, setStatistics] = useState<any>({});
+  const [isDataMustRefreshed, setIsDataMustRefreshed] = useState<any>(null);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -183,6 +184,35 @@ export const PackingItemsProvider = ({ children }: { children: ReactNode }) => {
     [packingItems]
   );
 
+  const refreshData = useCallback(() => {
+    setIsDataMustRefreshed(Math.random());
+  }, []);
+
+  // An edit can move the item between categories, so resync rather than
+  // recomputing category_stats locally.
+  const updatePacking = useCallback(
+    async (id: string, data: any, tripId: string = defaultTripId as string) => {
+      try {
+        setError("");
+        const response = await patchRequest(
+          `/trips/${tripId}/packing/items/${id}/`,
+          data
+        );
+        refreshData();
+        return response.data;
+      } catch (error) {
+        setError(
+          getErrorMessage(
+            error,
+            "An error occurred while updating the packing item. Please try again later."
+          )
+        );
+        throw error;
+      }
+    },
+    [refreshData]
+  );
+
   useEffect(() => {
     fetchCategories();
   }, []);
@@ -194,7 +224,7 @@ export const PackingItemsProvider = ({ children }: { children: ReactNode }) => {
       fetchStatistics(defaultTripId),
       fetchPackingItems(defaultTripId),
     ]).finally(() => setIsLoading(false));
-  }, [selectedCategory]);
+  }, [selectedCategory, isDataMustRefreshed]);
 
   return (
     <PackingItemsContext.Provider
@@ -207,9 +237,11 @@ export const PackingItemsProvider = ({ children }: { children: ReactNode }) => {
         statistics,
         setError,
         createPacking,
+        updatePacking,
         togglePacking,
         deletePacking,
         setSelectedCategory,
+        refreshData,
       }}
     >
       {children}

@@ -130,32 +130,37 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        splits_data = validated_data.pop('splits', [])
+        # Absent 'splits' means a partial update that isn't touching them;
+        # an empty list would mean "remove them all", which validate_splits
+        # already rejects.
+        splits_data = validated_data.pop('splits', None)
         instance = super().update(instance, validated_data)
-        
-        # Handle existing splits
-        existing_splits = {split.id: split for split in instance.splits.all()}
-        split_ids_to_keep = []
-        
-        # Update or create splits
+
+        if splits_data is None:
+            return instance
+
+        # Reconcile on member, not on split id: 'id' is read-only on
+        # ExpenseSplitSerializer, so it never survives validation and matching
+        # on it would recreate every split, tripping the unique
+        # (expense, member) constraint.
+        existing_splits = {split.member_id: split for split in instance.splits.all()}
+        members_to_keep = set()
+
         for split_data in splits_data:
-            split_id = split_data.get('id')
-            if split_id and split_id in existing_splits:
-                # Update existing split
-                split = existing_splits[split_id]
+            member = split_data.get('member')
+            split = existing_splits.get(member.id) if member else None
+            if split:
                 for attr, value in split_data.items():
-                    if attr != 'id':
-                        setattr(split, attr, value)
+                    setattr(split, attr, value)
                 split.save()
-                split_ids_to_keep.append(split_id)
             else:
-                # Create new split
-                new_split = ExpenseSplit.objects.create(expense=instance, **split_data)
-                split_ids_to_keep.append(new_split.id)
-        
-        # Delete splits not included in the update
-        for split_id, split in existing_splits.items():
-            if split_id not in split_ids_to_keep:
+                ExpenseSplit.objects.create(expense=instance, **split_data)
+            if member:
+                members_to_keep.add(member.id)
+
+        # Delete splits for members no longer part of the expense.
+        for member_id, split in existing_splits.items():
+            if member_id not in members_to_keep:
                 split.delete()
-        
+
         return instance

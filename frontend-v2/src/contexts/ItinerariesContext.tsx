@@ -179,6 +179,31 @@ export const ItinerariesProvider = ({ children }: { children: ReactNode }) => {
     setIsDataMustRefreshed(Math.random());
   }, []);
 
+  // An edit can change type/status/visit_time at once, so resync from the
+  // server instead of trying to patch the statistics buckets by hand.
+  const updateItinerary = useCallback(
+    async (id: string, data: any, tripId: string = defaultTripId as string) => {
+      try {
+        setError("");
+        const response = await patchRequest(
+          `/trips/${tripId}/itineraries/items/${id}/`,
+          data
+        );
+        refreshData();
+        return response.data;
+      } catch (error) {
+        setError(
+          getErrorMessage(
+            error,
+            "An error occurred while updating the itinerary item. Please try again later."
+          )
+        );
+        throw error;
+      }
+    },
+    [refreshData]
+  );
+
   useEffect(() => {
     fetchTypes();
   }, []);
@@ -208,6 +233,7 @@ export const ItinerariesProvider = ({ children }: { children: ReactNode }) => {
         setSelectedType,
         setSelectedStatus,
         createItinerary,
+        updateItinerary,
         deleteLocation,
         updateStatus,
         refreshData,

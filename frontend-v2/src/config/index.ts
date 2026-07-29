@@ -7,10 +7,13 @@ export const TRIP_MEMBER_ROLES = {
   MEMBER: ["MEMBER", "Member"],
 };
 
+// NOTE: MembersContext derives its "accepted" key from the first entry here,
+// so ACCEPTED must stay first.
 export const TRIP_MEMBER_STATUSES = {
   ACCEPTED: "Accepted",
   PENDING: "Pending",
   DECLINED: "Declined",
+  BLOCKED: "Blocked",
 };
 
 export const TRIP_STATUSES = {
