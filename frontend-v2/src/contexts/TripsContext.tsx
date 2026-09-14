@@ -20,7 +20,8 @@ export const useTrips = () => {
 };
 
 export const TripsProvider = ({ children }: { children: ReactNode }) => {
-  const { getRequest, postRequest, patchRequest, deleteRequest } = useApi();
+  const { getRequest, postRequest, putRequest, patchRequest, deleteRequest } =
+    useApi();
   const [publicTrips, setPublicTrips] = useState<any[]>([]);
   const [myTrips, setMyTrips] = useState<any[]>([]);
   const [tripsStatistics, setTripsStatistics] = useState<any>({});
@@ -99,6 +100,23 @@ export const TripsProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  // Covers go through their own multipart endpoint; both reply with the trip.
+  const uploadTripCover = useCallback(async (id: string, file: File) => {
+    const form = new FormData();
+    form.append("cover_image", file);
+    const response = await putRequest(`/trips/${id}/cover/`, form);
+    const trip = withTripLabels(response.data);
+    setMyTrips((prev) => prev.map((t) => (t.id === id ? trip : t)));
+    return trip;
+  }, []);
+
+  const removeTripCover = useCallback(async (id: string) => {
+    const response = await deleteRequest(`/trips/${id}/cover/`);
+    const trip = withTripLabels(response.data);
+    setMyTrips((prev) => prev.map((t) => (t.id === id ? trip : t)));
+    return trip;
+  }, []);
+
   const deleteTrip = useCallback(async (id: string) => {
     try {
       setError(null);
@@ -150,6 +168,8 @@ export const TripsProvider = ({ children }: { children: ReactNode }) => {
         fetchTripsStatistics,
         createTrip,
         updateTrip,
+        uploadTripCover,
+        removeTripCover,
         deleteTrip,
         joinTrip,
       }}

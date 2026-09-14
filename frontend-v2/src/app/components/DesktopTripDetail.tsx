@@ -297,6 +297,8 @@ export function DesktopTripDetail({ onBack }: Props) {
         onOpenChange={setEditOpen}
         trip={trip}
         onSave={(payload) => updateTrip(payload)}
+        onCoverUpload={(tripId, file) => uploadCover(file, tripId)}
+        onCoverRemove={(tripId) => removeCover(tripId)}
       />
     </div>
   );

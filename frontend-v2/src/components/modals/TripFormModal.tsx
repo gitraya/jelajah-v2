@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { X } from "lucide-react";
+import { ImageUp, Sparkles, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 
 import { Input } from "@/app/components/ui/input";
 import {
@@ -15,18 +16,33 @@ import { Textarea } from "@/app/components/ui/textarea";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { DIFFICULTY_LEVELS, TRIP_STATUSES } from "@/config";
 import { useTags } from "@/contexts/TagsContext";
-import { calculateDuration } from "@/lib/utils";
+import { useImagePicker } from "@/hooks/useImagePicker";
+import { coverImage } from "@/lib/adapters";
+import { calculateDuration, getErrorMessage } from "@/lib/utils";
 import { Field, FieldRow, FormModal } from "./FormModal";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   trip?: any;
-  /** Create or update; supplied by the calling screen's context. */
-  onSave: (payload: Record<string, any>) => Promise<unknown>;
+  /** Create or update; supplied by the calling screen's context. Resolves to the saved trip. */
+  onSave: (payload: Record<string, any>) => Promise<any>;
+  /** Cover calls run after onSave, since a new trip needs its id first. */
+  onCoverUpload: (tripId: string, file: File) => Promise<unknown>;
+  onCoverRemove: (tripId: string) => Promise<unknown>;
+  /** Runs once the trip and its cover are both saved (e.g. to navigate). */
+  onSaved?: (trip: any) => void;
 }
 
-export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
+export function TripFormModal({
+  open,
+  onOpenChange,
+  trip,
+  onSave,
+  onCoverUpload,
+  onCoverRemove,
+  onSaved,
+}: Props) {
   const { tags } = useTags();
 
   const [title, setTitle] = useState("");
@@ -44,6 +60,12 @@ export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState("");
   const [newTagNames, setNewTagNames] = useState<string[]>([]);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverRemoved, setCoverRemoved] = useState(false);
+  const coverPicker = useImagePicker((file) => {
+    setCoverFile(file);
+    setCoverRemoved(false);
+  });
 
   const isEdit = Boolean(trip);
   const todayString = format(new Date(), "yyyy-MM-dd");
@@ -65,7 +87,26 @@ export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
     setTagIds((trip?.tags || []).map((t: any) => t.id));
     setNewTagNames([]);
     setNewTagInput("");
+    setCoverFile(null);
+    setCoverRemoved(false);
   }, [open, trip]);
+
+  const coverPreview = useMemo(
+    () => (coverFile ? URL.createObjectURL(coverFile) : null),
+    [coverFile]
+  );
+  useEffect(
+    () => () => {
+      if (coverPreview) URL.revokeObjectURL(coverPreview);
+    },
+    [coverPreview]
+  );
+
+  const hasCustomCover = Boolean(coverFile || (trip?.cover_image && !coverRemoved));
+  // Without a custom cover, preview the stock photo the destination will get.
+  const coverSrc =
+    coverPreview ||
+    (hasCustomCover ? trip.cover_image : coverImage({ destination, title }));
 
   const duration = useMemo(
     () => (startDate && endDate ? calculateDuration(startDate, endDate) : 0),
@@ -122,7 +163,21 @@ export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
       // reaches Trip(**validated_data) and raises a 500.
       payload.remove_tag_ids = originalTagIds.filter((id) => !tagIds.includes(id));
     }
-    return onSave(payload);
+    // A failure here rejects and keeps the dialog open, as before.
+    const saved = await onSave(payload);
+
+    // The trip is already saved, so a cover failure only warns; the cover can
+    // be retried from the trip page.
+    try {
+      if (coverFile) await onCoverUpload(saved.id, coverFile);
+      else if (coverRemoved && trip?.cover_image) await onCoverRemove(saved.id);
+    } catch (error) {
+      toast.error("Trip saved, but the cover didn't upload", {
+        description: getErrorMessage(error),
+      });
+    }
+    onSaved?.(saved);
+    return saved;
   };
 
   return (
@@ -135,6 +190,51 @@ export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
       onSubmit={handleSubmit}
       validationError={validationError}
     >
+      <Field label="Cover" hint="JPEG, PNG or WebP · max 5 MB">
+        {coverPicker.input}
+        <div className="relative h-36 rounded-xl overflow-hidden bg-muted border border-border">
+          <img
+            key={coverSrc}
+            src={coverSrc}
+            alt=""
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+          {!hasCustomCover ? (
+            <span
+              className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-full bg-black/40 backdrop-blur-sm text-white px-2 py-0.5"
+              style={{ fontSize: 11, fontWeight: 600 }}
+            >
+              <Sparkles className="w-3 h-3" /> Auto from destination
+            </span>
+          ) : null}
+          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5">
+            {hasCustomCover ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCoverFile(null);
+                  setCoverRemoved(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white/20 backdrop-blur-sm text-white px-2.5 py-1.5 hover:bg-white/30 transition-colors"
+                style={{ fontSize: 12, fontWeight: 600 }}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Remove
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={coverPicker.open}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white text-foreground px-2.5 py-1.5 hover:bg-white/90 transition-colors shadow-sm"
+              style={{ fontSize: 12, fontWeight: 600 }}
+            >
+              <ImageUp className="w-3.5 h-3.5" />
+              {hasCustomCover ? "Change" : "Upload cover"}
+            </button>
+          </div>
+        </div>
+      </Field>
+
       <Field label="Title" htmlFor="tr-title" required>
         <Input
           id="tr-title"

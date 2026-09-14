@@ -34,6 +34,8 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
     tripsStatistics,
     fetchTripsStatistics,
     createTrip,
+    uploadTripCover,
+    removeTripCover,
   } = useTrips();
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -212,11 +214,11 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
       <TripFormModal
         open={formOpen}
         onOpenChange={setFormOpen}
-        onSave={async (payload) => {
-          const trip = await createTrip(payload);
-          navigate(`/trips/${trip.id}`);
-          return trip;
-        }}
+        onSave={createTrip}
+        onCoverUpload={uploadTripCover}
+        onCoverRemove={removeTripCover}
+        // Navigate only after the cover step, so the trip page loads with it.
+        onSaved={(trip) => navigate(`/trips/${trip.id}`)}
       />
     </div>
   );

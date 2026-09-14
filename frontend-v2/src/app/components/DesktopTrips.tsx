@@ -31,8 +31,15 @@ const statusConfig: Record<
 
 export function DesktopTrips() {
   const navigate = useNavigate();
-  const { myTrips, fetchMyTrips, createTrip, updateTrip, deleteTrip } =
-    useTrips();
+  const {
+    myTrips,
+    fetchMyTrips,
+    createTrip,
+    updateTrip,
+    uploadTripCover,
+    removeTripCover,
+    deleteTrip,
+  } = useTrips();
 
   const [filter, setFilter] = useState<TripFilter>("all");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -317,6 +324,8 @@ export function DesktopTrips() {
         onOpenChange={setFormOpen}
         trip={editing}
         onSave={handleSave}
+        onCoverUpload={uploadTripCover}
+        onCoverRemove={removeTripCover}
       />
 
       <ConfirmDialog
