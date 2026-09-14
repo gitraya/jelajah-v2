@@ -222,7 +222,7 @@ export function DesktopBuddies() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search buddies…"
-          className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3 text-foreground placeholder-muted-foreground outline-none focus:border-primary transition-colors"
+          className="w-full bg-card border border-input rounded-2xl pl-11 pr-4 py-3 text-foreground placeholder-muted-foreground outline-none focus:border-primary transition-colors"
           style={{ fontSize: 14 }}
         />
       </div>
