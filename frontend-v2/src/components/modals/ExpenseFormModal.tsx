@@ -10,9 +10,11 @@ import {
   SelectValue,
 } from "@/app/components/ui/select";
 import { Textarea } from "@/app/components/ui/textarea";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { EXPENSE_SPLIT_TYPES } from "@/config";
 import { useExpenses } from "@/contexts/ExpensesContext";
 import { useMembers } from "@/contexts/MembersContext";
+import { useTrip } from "@/contexts/TripContext";
 import { colorFor, formatRp, memberInitials, memberName } from "@/lib/adapters";
 import { Field, FieldRow, FormModal } from "./FormModal";
 
@@ -44,6 +46,7 @@ const splitEvenly = (totalCents: number, n: number) => {
 
 export function ExpenseFormModal({ open, onOpenChange, expense }: Props) {
   const { categories, createExpense, updateExpense } = useExpenses();
+  const { trip } = useTrip();
   const { acceptedMembers } = useMembers();
 
   const [title, setTitle] = useState("");
@@ -225,11 +228,11 @@ export function ExpenseFormModal({ open, onOpenChange, expense }: Props) {
           />
         </Field>
         <Field label="Date" htmlFor="ex-date" required>
-          <Input
+          <DatePicker
             id="ex-date"
-            type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={setDate}
+            highlight={{ from: trip?.start_date, to: trip?.end_date }}
           />
         </Field>
       </FieldRow>

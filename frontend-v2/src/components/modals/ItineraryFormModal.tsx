@@ -9,8 +9,10 @@ import {
   SelectValue,
 } from "@/app/components/ui/select";
 import { Textarea } from "@/app/components/ui/textarea";
+import { DateTimePicker } from "@/components/ui/DatePicker";
 import { ITINERARY_STATUSES } from "@/config";
 import { useItineraries } from "@/contexts/ItinerariesContext";
+import { useTrip } from "@/contexts/TripContext";
 import { Field, FieldRow, FormModal } from "./FormModal";
 
 interface Props {
@@ -21,7 +23,7 @@ interface Props {
 }
 
 /**
- * `visit_time` is a DateTimeField on the API but <input type="datetime-local">
+ * `visit_time` is a DateTimeField on the API but DateTimePicker
  * speaks local wall-clock strings, so convert in both directions.
  */
 const toLocalInput = (iso?: string) => {
@@ -48,6 +50,7 @@ const emptyForm = {
 
 export function ItineraryFormModal({ open, onOpenChange, item }: Props) {
   const { types, createItinerary, updateItinerary } = useItineraries();
+  const { trip } = useTrip();
   const [form, setForm] = useState(emptyForm);
 
   // Selectable types exclude the synthetic "All" entry the context prepends
@@ -158,11 +161,13 @@ export function ItineraryFormModal({ open, onOpenChange, item }: Props) {
           htmlFor="it-visit"
           hint="Must fall within the trip dates."
         >
-          <Input
+          <DateTimePicker
             id="it-visit"
-            type="datetime-local"
             value={form.visit_time}
-            onChange={(e) => set("visit_time", e.target.value)}
+            onChange={(v) => set("visit_time", v)}
+            min={trip?.start_date}
+            max={trip?.end_date}
+            highlight={{ from: trip?.start_date, to: trip?.end_date }}
           />
         </Field>
 

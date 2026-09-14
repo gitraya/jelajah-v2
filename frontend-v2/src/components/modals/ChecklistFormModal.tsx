@@ -9,8 +9,10 @@ import {
   SelectValue,
 } from "@/app/components/ui/select";
 import { Textarea } from "@/app/components/ui/textarea";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { CHECKLIST_PRIORITY } from "@/config";
 import { useChecklist } from "@/contexts/ChecklistContext";
+import { useTrip } from "@/contexts/TripContext";
 import { useMembers } from "@/contexts/MembersContext";
 import { memberName } from "@/lib/adapters";
 import { Field, FieldRow, FormModal } from "./FormModal";
@@ -23,6 +25,7 @@ interface Props {
 
 export function ChecklistFormModal({ open, onOpenChange, item }: Props) {
   const { createChecklist, updateChecklist } = useChecklist();
+  const { trip } = useTrip();
   const { acceptedMembers } = useMembers();
 
   const [title, setTitle] = useState("");
@@ -98,11 +101,13 @@ export function ChecklistFormModal({ open, onOpenChange, item }: Props) {
           htmlFor="cl-due"
           hint="Sorts the task into pre-, during-, or post-trip."
         >
-          <Input
+          <DatePicker
             id="cl-due"
-            type="date"
             value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
+            onChange={setDueDate}
+            placeholder="No due date"
+            highlight={{ from: trip?.start_date, to: trip?.end_date }}
+            clearable
           />
         </Field>
       </FieldRow>

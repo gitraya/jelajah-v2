@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
 import { X } from "lucide-react";
 
 import { Input } from "@/app/components/ui/input";
@@ -11,6 +12,7 @@ import {
 } from "@/app/components/ui/select";
 import { Switch } from "@/app/components/ui/switch";
 import { Textarea } from "@/app/components/ui/textarea";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { DIFFICULTY_LEVELS, TRIP_STATUSES } from "@/config";
 import { useTags } from "@/contexts/TagsContext";
 import { calculateDuration } from "@/lib/utils";
@@ -44,6 +46,7 @@ export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
   const [newTagNames, setNewTagNames] = useState<string[]>([]);
 
   const isEdit = Boolean(trip);
+  const todayString = format(new Date(), "yyyy-MM-dd");
 
   useEffect(() => {
     if (!open) return;
@@ -157,11 +160,14 @@ export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
           required
           hint={isEdit ? undefined : "Cannot be in the past."}
         >
-          <Input
+          <DatePicker
             id="tr-start"
-            type="date"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={setStartDate}
+            placeholder="Departure"
+            min={isEdit ? undefined : todayString}
+            max={endDate || undefined}
+            highlight={{ from: startDate, to: endDate }}
           />
         </Field>
         <Field
@@ -170,11 +176,13 @@ export function TripFormModal({ open, onOpenChange, trip, onSave }: Props) {
           required
           hint={duration ? `${duration} days` : undefined}
         >
-          <Input
+          <DatePicker
             id="tr-end"
-            type="date"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            onChange={setEndDate}
+            placeholder="Return"
+            min={startDate || (isEdit ? undefined : todayString)}
+            highlight={{ from: startDate, to: endDate }}
           />
         </Field>
       </FieldRow>
