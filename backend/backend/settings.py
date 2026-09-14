@@ -183,7 +183,6 @@ USE_TZ = True
 STATIC_URL = 'static/'
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -212,6 +211,7 @@ REST_FRAMEWORK = {
         "anon": "500/hour",
         "user": "500/hour",
         "resend_set_password_email": "3/hour",
+        "uploads": "20/hour",
     },
 }
 
@@ -236,6 +236,58 @@ SIMPLE_JWT = {
 # Media settings for user avatars and other uploads
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Uploaded media goes to Cloudflare R2 (S3-compatible, via django-storages)
+# when a bucket is configured, and to MEDIA_ROOT on local disk otherwise. R2
+# keys use their own env names so they never mix with the SES AWS_* keys.
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "")
+# Public bucket domain (custom domain or r2.dev), e.g. https://media.example.com.
+# Empty keeps the bucket private and serves time-limited signed URLs instead.
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
+R2_ENABLED = bool(R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_BUCKET_NAME)
+
+if R2_ENABLED:
+    from urllib.parse import urlparse
+    from botocore.config import Config
+
+    public_host = urlparse(R2_PUBLIC_URL).netloc if R2_PUBLIC_URL else None
+    MEDIA_STORAGE = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "access_key": R2_ACCESS_KEY_ID,
+            "secret_key": R2_SECRET_ACCESS_KEY,
+            "bucket_name": R2_BUCKET_NAME,
+            "endpoint_url": f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            "region_name": "auto",
+            "default_acl": None,  # R2 has no ACLs
+            "file_overwrite": False,
+            "custom_domain": public_host,
+            "querystring_auth": not public_host,
+            "querystring_expire": 60 * 60 * 24,  # signed URLs last a day
+            "object_parameters": {"CacheControl": "public, max-age=31536000, immutable"},
+            # boto3 >= 1.36 sends default checksums R2 may reject; only send
+            # them when an operation requires one.
+            "client_config": Config(
+                signature_version="s3v4",
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            ),
+        },
+    }
+else:
+    MEDIA_STORAGE = {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+
+STORAGES = {
+    "default": MEDIA_STORAGE,
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+# Image uploads are validated, downscaled and re-encoded to WebP before storage
+# (see backend/images.py), which keeps the bucket well inside R2's free tier.
+IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 
 # Email: Amazon SES is the primary provider, SendGrid the fallback. Both are
 # optional — a provider only joins EMAIL_BACKEND_CHAIN when its credentials are

@@ -227,3 +227,130 @@ class GoogleAuthTests(TestCase):
         response = self.client.post(self.url, {"credential": "fake-id-token"}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+def image_upload(name="photo.png", size=(1200, 800), fmt="PNG", mode="RGB"):
+    from io import BytesIO
+    from PIL import Image
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    buffer = BytesIO()
+    Image.new(mode, size, "green").save(buffer, format=fmt)
+    return SimpleUploadedFile(name, buffer.getvalue(), content_type=f"image/{fmt.lower()}")
+
+
+class AvatarUploadTests(TestCase):
+    """Avatar uploads through PATCH /api/auth/me/ are validated and normalized."""
+
+    def setUp(self):
+        import tempfile
+        from django.core.cache import cache
+
+        cache.clear()  # throttle history lives in the cache
+        self.media_dir = tempfile.TemporaryDirectory()
+        self.override = override_settings(MEDIA_ROOT=self.media_dir.name)
+        self.override.enable()
+        self.client = APIClient()
+        self.user = User.objects.create_user(email="pic@example.com", password="Test12#$")
+        self.client.force_authenticate(user=self.user)
+        self.url = reverse("user_detail")
+
+    def tearDown(self):
+        self.override.disable()
+        self.media_dir.cleanup()
+
+    def upload(self, file):
+        return self.client.patch(self.url, {"avatar": file}, format="multipart")
+
+    def test_upload_is_resized_and_converted_to_webp(self):
+        from PIL import Image
+
+        response = self.upload(image_upload(size=(2000, 1000)))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.avatar.name.startswith("avatars/"))
+        self.assertTrue(self.user.avatar.name.endswith(".webp"))
+        with Image.open(self.user.avatar.path) as stored:
+            self.assertEqual(stored.format, "WEBP")
+            self.assertEqual(stored.size, (512, 256))
+
+    def test_rejects_non_image(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        fake = SimpleUploadedFile("evil.png", b"not an image", content_type="image/png")
+        response = self.upload(fake)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("avatar", response.data)
+
+    def test_rejects_unsupported_format(self):
+        response = self.upload(image_upload(name="anim.gif", fmt="GIF", mode="P"))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("avatar", response.data)
+
+    @override_settings(IMAGE_UPLOAD_MAX_BYTES=100)
+    def test_rejects_oversized_file(self):
+        response = self.upload(image_upload())
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("MB or smaller", str(response.data["avatar"]))
+
+    def test_replacing_avatar_deletes_previous_file(self):
+        import os
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.upload(image_upload())
+        self.user.refresh_from_db()
+        first_path = self.user.avatar.path
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.upload(image_upload())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertNotEqual(self.user.avatar.path, first_path)
+        self.assertFalse(os.path.exists(first_path))
+        self.assertTrue(os.path.exists(self.user.avatar.path))
+
+    def test_clearing_avatar_deletes_file(self):
+        import os
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.upload(image_upload())
+        self.user.refresh_from_db()
+        path = self.user.avatar.path
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(self.url, {"avatar": None}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.avatar)
+        self.assertFalse(os.path.exists(path))
+
+    def test_non_upload_updates_keep_avatar(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.upload(image_upload())
+        self.user.refresh_from_db()
+        name = self.user.avatar.name
+
+        response = self.client.patch(self.url, {"bio": "Hi"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, name)
+
+    def test_uploads_are_throttled_but_reads_are_not(self):
+        from rest_framework.throttling import ScopedRateThrottle
+
+        # DRF reads throttle rates once at import, so override_settings can't lower them.
+        rates = {**ScopedRateThrottle.THROTTLE_RATES, "uploads": "1/hour"}
+        with patch.object(ScopedRateThrottle, "THROTTLE_RATES", rates):
+            self._assert_upload_throttled()
+
+    def _assert_upload_throttled(self):
+        self.assertEqual(self.upload(image_upload()).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.upload(image_upload()).status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertEqual(self.client.get(self.url).status_code, status.HTTP_200_OK)

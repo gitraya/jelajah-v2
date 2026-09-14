@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.db import transaction
+
+from backend.images import process_image
 
 User = get_user_model()
 
@@ -14,6 +17,18 @@ class UserDetailSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'bio', 'avatar', 'date_joined', 'phone']
         read_only_fields = ['id', 'email', 'date_joined']
+
+    def validate_avatar(self, value):
+        return process_image(value, max_side=512) if value else value
+
+    def update(self, instance, validated_data):
+        old_avatar = instance.avatar.name if 'avatar' in validated_data else None
+        instance = super().update(instance, validated_data)
+        # Django never deletes a replaced file; remove it once the new one is saved.
+        if old_avatar and old_avatar != instance.avatar.name:
+            storage = instance.avatar.storage
+            transaction.on_commit(lambda: storage.delete(old_avatar))
+        return instance
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})

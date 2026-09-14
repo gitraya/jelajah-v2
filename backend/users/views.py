@@ -76,6 +76,12 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+    def get_throttles(self):
+        # Rate-limit uploads without throttling the frequent GET /me/ calls.
+        if self.request.method in ('PUT', 'PATCH') and self.request.FILES:
+            self.throttle_scope = 'uploads'
+        return super().get_throttles()
+
 class UserProfileView(generics.RetrieveAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
