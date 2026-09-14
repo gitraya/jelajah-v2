@@ -23,7 +23,7 @@ export const useTrip = () => {
 
 export const TripProvider = ({ children }: { children: ReactNode }) => {
   const { id: defaultTripId } = useParams();
-  const { getRequest, patchRequest } = useApi();
+  const { getRequest, patchRequest, putRequest, deleteRequest } = useApi();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [trip, setTrip] = useState<any>(null);
@@ -74,6 +74,28 @@ export const TripProvider = ({ children }: { children: ReactNode }) => {
     []
   );
 
+  // The cover has its own endpoint because it is multipart; both calls reply
+  // with the full trip.
+  const uploadCover = useCallback(
+    async (file: File, tripId: string = defaultTripId as string) => {
+      const form = new FormData();
+      form.append("cover_image", file);
+      const response = await putRequest(`/trips/${tripId}/cover/`, form);
+      setTrip(withTripLabels(response.data));
+      return response.data;
+    },
+    []
+  );
+
+  const removeCover = useCallback(
+    async (tripId: string = defaultTripId as string) => {
+      const response = await deleteRequest(`/trips/${tripId}/cover/`);
+      setTrip(withTripLabels(response.data));
+      return response.data;
+    },
+    []
+  );
+
   useEffect(() => {
     if (!defaultTripId) return;
     fetchItinerarySummary(defaultTripId);
@@ -91,6 +113,8 @@ export const TripProvider = ({ children }: { children: ReactNode }) => {
         fetchTripDetails,
         fetchItinerarySummary,
         updateTrip,
+        uploadCover,
+        removeCover,
       }}
     >
       {children}

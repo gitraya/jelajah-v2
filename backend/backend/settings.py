@@ -250,7 +250,12 @@ R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
 R2_ENABLED = bool(R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_BUCKET_NAME)
 
 if R2_ENABLED:
+    import mimetypes
     from urllib.parse import urlparse
+
+    # django-storages sets Content-Type from the file extension; older Python
+    # mimetypes tables lack .webp, which would upload images as octet-stream.
+    mimetypes.add_type("image/webp", ".webp")
     from botocore.config import Config
 
     public_host = urlparse(R2_PUBLIC_URL).netloc if R2_PUBLIC_URL else None

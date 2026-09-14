@@ -65,6 +65,7 @@ class Trip(BaseModel):
     difficulty = models.CharField(max_length=15, choices=TripDifficulty.choices, default=TripDifficulty.EASY)
     tags = models.ManyToManyField(Tag, related_name='trips', blank=True)
     is_joinable = models.BooleanField(default=True)
+    cover_image = models.ImageField(upload_to='trip_covers/', null=True, blank=True)
 
     def __str__(self):
         return self.title

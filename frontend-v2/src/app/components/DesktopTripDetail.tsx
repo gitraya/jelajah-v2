@@ -2,24 +2,38 @@ import { useState } from "react";
 import {
   ArrowLeft,
   Calendar,
+  Camera,
+  ImageUp,
+  Loader2,
   MapPin,
   Pencil,
+  Trash2,
   Users,
   Wallet,
 } from "lucide-react";
+import { toast } from "sonner";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/app/components/ui/dropdown-menu";
 
 import { BudgetTab } from "@/components/trip/BudgetTab";
 import { ChecklistTab } from "@/components/trip/ChecklistTab";
 import { ItineraryTab } from "@/components/trip/ItineraryTab";
 import { PackingTab } from "@/components/trip/PackingTab";
 import { TravelersTab } from "@/components/trip/TravelersTab";
+import { UserAvatar } from "@/components/UserAvatar";
 import { TripFormModal } from "@/components/modals/TripFormModal";
 import { useExpenses } from "@/contexts/ExpensesContext";
 import { useMembers } from "@/contexts/MembersContext";
 import { useTrip } from "@/contexts/TripContext";
-import { coverImage, colorFor, formatRp, memberInitials } from "@/lib/adapters";
+import { coverImage, formatRp } from "@/lib/adapters";
 import { getTripDifficultyColor, getTripStatusColor } from "@/lib/colors";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getErrorMessage } from "@/lib/utils";
+import { useImagePicker } from "@/hooks/useImagePicker";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 interface Props {
@@ -40,13 +54,31 @@ export function DesktopTripDetail({ onBack }: Props) {
   const [activeTab, setActiveTab] = useState<DetailTab>("itinerary");
   const [editOpen, setEditOpen] = useState(false);
 
-  const { trip, isLoading, updateTrip } = useTrip();
+  const [coverBusy, setCoverBusy] = useState(false);
+
+  const { trip, isLoading, updateTrip, uploadCover, removeCover } = useTrip();
   const { members } = useMembers();
   const { statistics: expenseStats } = useExpenses();
 
   // `is_editable` is computed server-side from ownership + role, so trust it
   // rather than re-deriving permissions in the client.
   const canEdit = Boolean(trip?.is_editable);
+
+  const runCoverAction = async (action: () => Promise<unknown>, success: string) => {
+    setCoverBusy(true);
+    try {
+      await action();
+      toast.success(success);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not update the cover"));
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const coverPicker = useImagePicker((file) =>
+    runCoverAction(() => uploadCover(file), "Cover updated")
+  );
 
   const budget = Number(trip?.budget || 0);
   const spent = Number(expenseStats?.amount_spent ?? trip?.spent_budget ?? 0);
@@ -79,6 +111,8 @@ export function DesktopTripDetail({ onBack }: Props) {
       {/* Cover */}
       <div className="relative h-52 overflow-hidden bg-slate-700">
         <ImageWithFallback
+          // Remount on change so a previously failed image doesn't stick.
+          key={coverImage(trip)}
           src={coverImage(trip)}
           alt={trip.title}
           className="w-full h-full object-cover opacity-80"
@@ -94,13 +128,58 @@ export function DesktopTripDetail({ onBack }: Props) {
         </button>
 
         {canEdit ? (
-          <button
-            onClick={() => setEditOpen(true)}
-            className="absolute top-5 right-6 flex items-center gap-2 bg-white/20 backdrop-blur-sm text-white rounded-xl px-3 py-2 hover:bg-white/30 transition-colors"
-            style={{ fontSize: 13, fontWeight: 600 }}
-          >
-            <Pencil className="w-3.5 h-3.5" /> Edit trip
-          </button>
+          <div className="absolute top-5 right-6 flex items-center gap-2">
+            {coverPicker.input}
+            {trip.cover_image ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={coverBusy}>
+                  <button
+                    className="flex items-center gap-2 bg-white/20 backdrop-blur-sm text-white rounded-xl px-3 py-2 hover:bg-white/30 transition-colors disabled:opacity-70"
+                    style={{ fontSize: 13, fontWeight: 600 }}
+                  >
+                    {coverBusy ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5" />
+                    )}
+                    Cover
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="rounded-xl">
+                  <DropdownMenuItem onSelect={coverPicker.open}>
+                    <ImageUp className="w-4 h-4" /> Upload new cover
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => runCoverAction(removeCover, "Cover removed")}
+                  >
+                    <Trash2 className="w-4 h-4" /> Remove cover
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <button
+                onClick={coverPicker.open}
+                disabled={coverBusy}
+                className="flex items-center gap-2 bg-white/20 backdrop-blur-sm text-white rounded-xl px-3 py-2 hover:bg-white/30 transition-colors disabled:opacity-70"
+                style={{ fontSize: 13, fontWeight: 600 }}
+              >
+                {coverBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Camera className="w-3.5 h-3.5" />
+                )}
+                {coverBusy ? "Uploading…" : "Add cover"}
+              </button>
+            )}
+            <button
+              onClick={() => setEditOpen(true)}
+              className="flex items-center gap-2 bg-white/20 backdrop-blur-sm text-white rounded-xl px-3 py-2 hover:bg-white/30 transition-colors"
+              style={{ fontSize: 13, fontWeight: 600 }}
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit trip
+            </button>
+          </div>
         ) : null}
 
         <div className="absolute bottom-5 left-6">
@@ -141,18 +220,12 @@ export function DesktopTripDetail({ onBack }: Props) {
 
         <div className="absolute bottom-5 right-6 flex -space-x-2">
           {(members || []).slice(0, 6).map((m: any) => (
-            <div
+            <UserAvatar
               key={m.id}
-              className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center"
-              style={{
-                background: colorFor(m.user?.email || String(m.id)),
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#fff",
-              }}
-            >
-              {memberInitials(m)}
-            </div>
+              person={m}
+              className="w-8 h-8 rounded-full border-2 border-white"
+              style={{ fontSize: 10 }}
+            />
           ))}
         </div>
       </div>

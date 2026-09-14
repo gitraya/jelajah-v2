@@ -28,7 +28,7 @@ export const memberName = (m: any) => {
 
 export const memberInitials = (m: any) => getInitials(memberName(m)).slice(0, 2);
 
-// Travel cover image fallback keyed on destination keyword.
+// Uploaded trip cover, else a stock photo keyed on destination keyword.
 const DESTINATION_IMAGES: Record<string, string> = {
   japan: "photo-1659094438327-493ee9cc0c4c",
   osaka: "photo-1659094438327-493ee9cc0c4c",
@@ -44,6 +44,7 @@ const DESTINATION_IMAGES: Record<string, string> = {
 };
 
 export const coverImage = (trip: any) => {
+  if (trip.cover_image) return trip.cover_image;
   const key = `${trip.destination || ""} ${trip.title || ""}`.toLowerCase();
   const match = Object.keys(DESTINATION_IMAGES).find((k) => key.includes(k));
   const photo = match ? DESTINATION_IMAGES[match] : "photo-1488646953014-85cb44e25828";

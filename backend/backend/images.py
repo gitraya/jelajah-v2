@@ -3,6 +3,7 @@ from io import BytesIO
 
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.db import transaction
 from PIL import Image, ImageOps, UnidentifiedImageError
 from rest_framework import serializers
 
@@ -44,3 +45,15 @@ def process_image(upload, max_side, quality=82):
     buffer = BytesIO()
     image.save(buffer, format="WEBP", quality=quality, method=6)
     return ContentFile(buffer.getvalue(), name=f"{uuid.uuid4().hex}.webp")
+
+
+def delete_replaced_file(field_file, new_name):
+    """
+    Delete the file a FieldFile pointed at before it was replaced or cleared.
+    Django never removes replaced files itself; deleting only after the
+    transaction commits keeps the old file if the save rolls back.
+    """
+    old_name = field_file.name
+    if old_name and old_name != new_name:
+        storage = field_file.storage
+        transaction.on_commit(lambda: storage.delete(old_name))

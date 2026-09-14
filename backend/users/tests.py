@@ -11,6 +11,9 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+# Upload tests must never reach the R2 bucket configured in a developer's .env.
+LOCAL_STORAGES = {**settings.STORAGES, "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"}}
+
 
 class UserRegistrationTests(TestCase):
     """Tests for user registration, login, and detail endpoints using email-based User model."""
@@ -248,7 +251,7 @@ class AvatarUploadTests(TestCase):
 
         cache.clear()  # throttle history lives in the cache
         self.media_dir = tempfile.TemporaryDirectory()
-        self.override = override_settings(MEDIA_ROOT=self.media_dir.name)
+        self.override = override_settings(MEDIA_ROOT=self.media_dir.name, STORAGES=LOCAL_STORAGES)
         self.override.enable()
         self.client = APIClient()
         self.user = User.objects.create_user(email="pic@example.com", password="Test12#$")

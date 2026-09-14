@@ -1,4 +1,6 @@
 from rest_framework import status, generics
+from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
@@ -8,12 +10,13 @@ from django.db import models
 from django.contrib.auth.tokens import default_token_generator
 
 from .models import Trip, TripStatus, MemberStatus, TripMember, Tag
-from .serializers import TripSerializer, TripMemberSerializer, TagSerializer
+from .serializers import TripSerializer, TripMemberSerializer, TagSerializer, TripCoverSerializer
 from .permissions import IsTripAccessible, IsMemberAccessible
 from expenses.models import ExpenseSplit
 from itineraries.models import ItineraryItem
 from checklist.models import ChecklistItem
 from datetime import timedelta
+from backend.images import delete_replaced_file
 from backend.services import send_templated_email
 from django.conf import settings
 
@@ -72,6 +75,28 @@ class TripViewSet(ModelViewSet):
         trip.status = TripStatus.DELETED
         trip.save()
         return Response(status=204)
+
+    def get_throttles(self):
+        if self.action == 'cover' and self.request.method == 'PUT':
+            self.throttle_scope = 'uploads'
+        return super().get_throttles()
+
+    @action(detail=True, methods=['put', 'delete'], url_path='cover', parser_classes=[MultiPartParser, FormParser])
+    def cover(self, request, pk=None):
+        """Upload (PUT, multipart `cover_image`) or remove (DELETE) the trip's cover image."""
+        trip = self.get_object()
+        old_cover = trip.cover_image
+
+        if request.method == 'DELETE':
+            trip.cover_image = None
+            trip.save(update_fields=['cover_image', 'updated_at'])
+        else:
+            serializer = TripCoverSerializer(trip, data=request.data)
+            serializer.is_valid(raise_exception=True)
+            trip = serializer.save()
+
+        delete_replaced_file(old_cover, trip.cover_image.name)
+        return Response(TripSerializer(trip, context=self.get_serializer_context()).data)
     
 class TripMemberViewSet(ModelViewSet):
     """

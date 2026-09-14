@@ -9,9 +9,9 @@ import {
 } from "lucide-react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
+import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTrips } from "@/contexts/TripsContext";
-import { getInitials } from "@/lib/utils";
 import { useEffect } from "react";
 
 const NAV = [
@@ -120,11 +120,11 @@ function Sidebar() {
               title="Your profile"
               className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg hover:bg-muted transition-colors py-1 px-1 -mx-1"
             >
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
-                <span className="text-white text-xs" style={{ fontWeight: 700 }}>
-                  {getInitials(userName || "")}
-                </span>
-              </div>
+              <UserAvatar
+                person={user}
+                className="w-8 h-8 rounded-full"
+                style={{ fontSize: 12 }}
+              />
               <div className="min-w-0">
                 <p
                   className="text-foreground truncate"

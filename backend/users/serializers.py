@@ -1,8 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from django.db import transaction
 
-from backend.images import process_image
+from backend.images import delete_replaced_file, process_image
 
 User = get_user_model()
 
@@ -22,12 +21,11 @@ class UserDetailSerializer(serializers.ModelSerializer):
         return process_image(value, max_side=512) if value else value
 
     def update(self, instance, validated_data):
-        old_avatar = instance.avatar.name if 'avatar' in validated_data else None
+        if 'avatar' not in validated_data:
+            return super().update(instance, validated_data)
+        old_avatar = instance.avatar
         instance = super().update(instance, validated_data)
-        # Django never deletes a replaced file; remove it once the new one is saved.
-        if old_avatar and old_avatar != instance.avatar.name:
-            storage = instance.avatar.storage
-            transaction.on_commit(lambda: storage.delete(old_avatar))
+        delete_replaced_file(old_avatar, instance.avatar.name)
         return instance
 
 class RegisterSerializer(serializers.ModelSerializer):

@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from .models import Trip, TripMember, TripStatus, MemberStatus, MemberRole
+from users.tests import LOCAL_STORAGES
 
 User = get_user_model()
 
@@ -152,3 +153,104 @@ class TripAPITests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         member.refresh_from_db()
         self.assertEqual(member.status, MemberStatus.ACCEPTED)
+
+
+class TripCoverTests(APITestCase):
+    """PUT/DELETE /api/trips/<id>/cover/ manage the trip's cover image."""
+
+    def setUp(self):
+        import tempfile
+        from django.core.cache import cache
+        from django.test import override_settings
+
+        cache.clear()  # throttle history lives in the cache
+        self.media_dir = tempfile.TemporaryDirectory()
+        self.override = override_settings(MEDIA_ROOT=self.media_dir.name, STORAGES=LOCAL_STORAGES)
+        self.override.enable()
+
+        self.owner = User.objects.create_user(email="cover-owner@example.com", password="testpass123")
+        self.member = User.objects.create_user(email="cover-member@example.com", password="testpass123")
+        self.trip = Trip.objects.create(
+            owner=self.owner,
+            title="Cover Trip",
+            destination="Bali",
+            start_date=date.today() + timedelta(days=5),
+            end_date=date.today() + timedelta(days=8),
+        )
+        TripMember.objects.create(trip=self.trip, user=self.owner, role=MemberRole.ORGANIZER, status=MemberStatus.ACCEPTED)
+        TripMember.objects.create(trip=self.trip, user=self.member, role=MemberRole.MEMBER, status=MemberStatus.ACCEPTED)
+        self.url = reverse("trip-cover", args=[self.trip.id])
+
+    def tearDown(self):
+        self.override.disable()
+        self.media_dir.cleanup()
+
+    def image(self, size=(3000, 1500)):
+        from io import BytesIO
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        buffer = BytesIO()
+        Image.new("RGB", size, "blue").save(buffer, format="JPEG")
+        return SimpleUploadedFile("cover.jpg", buffer.getvalue(), content_type="image/jpeg")
+
+    def upload(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.put(self.url, {"cover_image": self.image()}, format="multipart")
+
+    def test_organizer_uploads_resized_webp_cover(self):
+        from PIL import Image
+
+        self.client.force_authenticate(user=self.owner)
+        response = self.upload()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["cover_image"].endswith(".webp"))
+        self.trip.refresh_from_db()
+        with Image.open(self.trip.cover_image.path) as stored:
+            self.assertEqual(stored.size, (1600, 800))
+
+    def test_replacing_and_removing_cover_deletes_old_files(self):
+        import os
+
+        self.client.force_authenticate(user=self.owner)
+        self.upload()
+        self.trip.refresh_from_db()
+        first = self.trip.cover_image.path
+
+        self.upload()
+        self.trip.refresh_from_db()
+        second = self.trip.cover_image.path
+        self.assertFalse(os.path.exists(first))
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["cover_image"])
+        self.assertFalse(os.path.exists(second))
+
+    def test_regular_member_cannot_change_cover(self):
+        self.client.force_authenticate(user=self.member)
+        self.assertEqual(self.upload().status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_anonymous_cannot_change_cover(self):
+        self.assertIn(self.upload().status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+    def test_rejects_invalid_image_and_missing_file(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_authenticate(user=self.owner)
+        bogus = SimpleUploadedFile("cover.jpg", b"nope", content_type="image/jpeg")
+        response = self.client.put(self.url, {"cover_image": bogus}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response = self.client.put(self.url, {}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_trip_edit_cannot_set_cover(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.patch(
+            reverse("trip-detail", args=[self.trip.id]), {"cover_image": "trip_covers/evil.webp"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.trip.refresh_from_db()
+        self.assertFalse(self.trip.cover_image)

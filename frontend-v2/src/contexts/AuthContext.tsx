@@ -123,6 +123,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Axios sends FormData as multipart/form-data, which /auth/me/ needs for files.
+  const uploadAvatar = async (file: File) => {
+    const form = new FormData();
+    form.append("avatar", file);
+    return updateProfile(form);
+  };
+
+  const removeAvatar = async () => updateProfile({ avatar: null });
+
   const resendSetPasswordEmail = async (email: string) => {
     try {
       setError(null);
@@ -153,6 +162,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         logout,
         checkAuth,
         updateProfile,
+        uploadAvatar,
+        removeAvatar,
         setPassword,
         resendSetPasswordEmail,
         isAuthenticated,

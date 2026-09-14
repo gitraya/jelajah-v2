@@ -7,14 +7,15 @@ from django.contrib.auth import get_user_model
 from .models import Trip, TripMember, MemberStatus, MemberRole, TripStatus, Tag
 from expenses.models import ExpenseSplit, Expense
 from itineraries.models import ItineraryItem, ItineraryStatus
+from backend.images import process_image
 
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'phone']
-        read_only_fields = ['id']
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone', 'avatar']
+        read_only_fields = ['id', 'avatar']
         
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
@@ -177,7 +178,8 @@ class TripSerializer(serializers.ModelSerializer):
     class Meta:
         model = Trip
         exclude = ['members']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        # Set through the dedicated /cover/ endpoint (multipart), not trip edits.
+        read_only_fields = ['id', 'created_at', 'updated_at', 'cover_image']
     
     def validate_start_date(self, start_date):
         """Validate that start_date is not in the past"""        
@@ -330,3 +332,14 @@ class TripSerializer(serializers.ModelSerializer):
         representation['members_count'] = members_count
         representation['user_role'] = user_role
         return representation
+
+
+class TripCoverSerializer(serializers.ModelSerializer):
+    cover_image = serializers.ImageField()
+
+    class Meta:
+        model = Trip
+        fields = ['cover_image']
+
+    def validate_cover_image(self, value):
+        return process_image(value, max_side=1600)

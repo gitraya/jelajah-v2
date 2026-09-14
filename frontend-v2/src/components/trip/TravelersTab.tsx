@@ -13,9 +13,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMembers } from "@/contexts/MembersContext";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { MemberFormModal } from "@/components/modals/MemberFormModal";
-import { colorFor, memberName } from "@/lib/adapters";
+import { UserAvatar } from "@/components/UserAvatar";
+import { memberName } from "@/lib/adapters";
 import { getMemberRoleColor, getMemberStatusColor } from "@/lib/colors";
-import { getInitials } from "@/lib/utils";
 import { AddButton, EmptyState, ItemActions } from "./ItemActions";
 
 export function TravelersTab({ trip, canEdit }: { trip: any; canEdit: boolean }) {
@@ -87,16 +87,11 @@ export function TravelersTab({ trip, canEdit }: { trip: any; canEdit: boolean })
               key={m.id}
               className="group bg-card border border-border rounded-2xl p-4 flex items-center gap-3"
             >
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0"
-                style={{
-                  background: colorFor(m.user?.email || String(m.id)),
-                  fontSize: 14,
-                  fontWeight: 800,
-                }}
-              >
-                {getInitials(memberName(m)).slice(0, 2)}
-              </div>
+              <UserAvatar
+                person={m}
+                className="w-12 h-12 rounded-2xl"
+                style={{ fontSize: 14, fontWeight: 800 }}
+              />
 
               <div className="flex-1 min-w-0">
                 <p
