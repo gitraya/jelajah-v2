@@ -99,7 +99,7 @@ export function DesktopTrips() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-10 py-8">
+    <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1
@@ -149,7 +149,7 @@ export function DesktopTrips() {
               className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-md hover:border-primary/20 transition-all group"
             >
               <div className="flex">
-                <div className="relative w-56 shrink-0 overflow-hidden bg-slate-200">
+                <div className="relative w-24 sm:w-40 md:w-56 shrink-0 overflow-hidden bg-slate-200">
                   <ImageWithFallback
                     src={trip.img}
                     alt={trip.name}

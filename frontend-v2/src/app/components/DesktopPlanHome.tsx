@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Pencil, Copy, ArrowRight } from "lucide-react";
+import { Sparkles, Pencil, Compass, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { TripFormModal } from "@/components/modals/TripFormModal";
@@ -27,7 +27,7 @@ const greeting = () => {
 
 export function DesktopPlanHome({ onPlanIt }: Props) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const {
     myTrips,
     fetchMyTrips,
@@ -41,9 +41,18 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
   const [formOpen, setFormOpen] = useState(false);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     fetchMyTrips();
     fetchTripsStatistics();
-  }, [fetchMyTrips, fetchTripsStatistics]);
+  }, [isAuthenticated, fetchMyTrips, fetchTripsStatistics]);
+
+  const openTripForm = () => {
+    if (!isAuthenticated) {
+      navigate("/login?redirect=%2Ftrips");
+      return;
+    }
+    setFormOpen(true);
+  };
 
   // "Continue planning" surfaces the trips that aren't finished yet.
   const activeTrips = useMemo(
@@ -52,14 +61,18 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
   );
 
   const handleSubmit = () => {
-    const q = query.trim() || "5 days in Osaka with my 3 friends, food-focused, mid budget";
-    onPlanIt(q);
+    const idea = query.trim();
+    if (!idea) {
+      openTripForm();
+      return;
+    }
+    onPlanIt(idea);
   };
 
   const mine = tripsStatistics?.my_trips || {};
 
   return (
-    <div className="flex-1 overflow-y-auto px-10 py-8">
+    <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
       {/* Greeting */}
       <p className="text-muted-foreground mb-2" style={{ fontSize: 14, fontWeight: 500 }}>
         {greeting()}
@@ -82,7 +95,7 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-          placeholder="5 days in Osaka with my 3 friends, food-focused, mid budget…"
+          placeholder="Osaka, 5 days in October, traveling with friends…"
           className="flex-1 bg-transparent border-none outline-none text-foreground placeholder-muted-foreground"
           style={{ fontSize: 15, fontWeight: 400 }}
         />
@@ -91,7 +104,7 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
           className="bg-primary text-white rounded-xl px-5 py-2 flex items-center gap-2 hover:bg-[#13a058] transition-colors shrink-0"
           style={{ fontSize: 14, fontWeight: 600 }}
         >
-          Plan it <ArrowRight className="w-4 h-4" />
+          Continue <ArrowRight className="w-4 h-4" />
         </button>
       </div>
 
@@ -118,32 +131,37 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
       </div>
 
       {/* Path cards */}
-      <div className="grid grid-cols-2 gap-4 mb-9">
-        <div
-          onClick={() => setFormOpen(true)}
-          className="bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer group"
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-9">
+        <button
+          type="button"
+          onClick={openTripForm}
+          className="text-left bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer group"
         >
           <div className="w-10 h-10 bg-secondary rounded-xl flex items-center justify-center mb-3">
             <Pencil className="w-5 h-5 text-primary" strokeWidth={2} />
           </div>
           <p className="text-foreground mb-1" style={{ fontWeight: 700, fontSize: 15 }}>Build it step by step</p>
           <p className="text-muted-foreground" style={{ fontSize: 13, lineHeight: 1.5 }}>
-            A light guided flow — pick dates, add stops, invite friends. No blank pages.
+            Set the destination, dates, and budget. Add stops and invite travelers after creation.
           </p>
-        </div>
-        <div className="bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer group">
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/explore")}
+          className="text-left bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer group"
+        >
           <div className="w-10 h-10 bg-secondary rounded-xl flex items-center justify-center mb-3">
-            <Copy className="w-5 h-5 text-primary" strokeWidth={2} />
+            <Compass className="w-5 h-5 text-primary" strokeWidth={2} />
           </div>
-          <p className="text-foreground mb-1" style={{ fontWeight: 700, fontSize: 15 }}>Start from a template</p>
+          <p className="text-foreground mb-1" style={{ fontWeight: 700, fontSize: 15 }}>Explore community trips</p>
           <p className="text-muted-foreground" style={{ fontSize: 13, lineHeight: 1.5 }}>
-            Copy a ready-made itinerary from the community and tweak it.
+            Browse public trips for ideas and request to join one.
           </p>
-        </div>
+        </button>
       </div>
 
       {/* Your numbers, from /trips/statistics/ */}
-      <div className="grid grid-cols-4 gap-4 mb-9">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4 mb-9">
         {[
           { label: "Your trips", value: mine.total ?? 0 },
           { label: "Ongoing", value: mine.ongoing ?? 0 },
@@ -172,7 +190,7 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
             No trips in progress yet — start one above.
           </p>
         ) : (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {activeTrips.map((trip: any) => {
               const budget = Number(trip.budget || 0);
               const spent = Number(trip.spent_budget || 0);

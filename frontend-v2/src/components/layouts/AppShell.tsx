@@ -2,6 +2,7 @@ import {
   Briefcase,
   ChevronRight,
   Compass,
+  CircleUserRound,
   LogOut,
   Map,
   Sparkles,
@@ -29,7 +30,7 @@ function Sidebar() {
 
   useEffect(() => {
     if (user) fetchMyTrips();
-  }, [user]);
+  }, [user, fetchMyTrips]);
 
   const isActive = (to: string) =>
     to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
@@ -38,7 +39,7 @@ function Sidebar() {
     user && (`${user.first_name || ""} ${user.last_name || ""}`.trim() || user.email);
 
   return (
-    <aside className="w-[172px] shrink-0 h-full bg-card rounded-2xl border border-border flex flex-col py-5 px-3 shadow-sm">
+    <aside className="hidden md:flex w-[172px] shrink-0 h-full bg-card rounded-2xl border border-border flex-col py-5 px-3 shadow-sm">
       <div className="flex items-center gap-2 px-2 mb-7">
         <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shrink-0">
           <Compass className="w-4 h-4 text-white" strokeWidth={2} />
@@ -169,16 +170,45 @@ export default function AppShell() {
       style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
     >
       <div className="flex-1 min-h-0">
-        <div className="flex h-full gap-3 p-4">
+        <div className="flex h-full gap-3 p-2 md:p-4">
           <Sidebar />
           <div
-            className="flex-1 bg-card rounded-2xl overflow-hidden flex flex-col border border-border"
+            className="flex-1 min-w-0 bg-card rounded-2xl overflow-hidden flex flex-col border border-border"
             style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.06)" }}
           >
             <Outlet />
           </div>
         </div>
       </div>
+      <MobileNav />
     </div>
+  );
+}
+
+function MobileNav() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isActive = (to: string) =>
+    to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+  const items = [...NAV, { to: "/profile", label: "Profile", icon: CircleUserRound }];
+
+  return (
+    <nav className="md:hidden grid grid-cols-5 border-t border-border bg-card px-1 py-2" aria-label="Main navigation">
+      {items.map(({ to, label, icon: Icon }) => {
+        const active = isActive(to);
+        return (
+          <button
+            key={to}
+            type="button"
+            onClick={() => navigate(to)}
+            className={`flex flex-col items-center gap-1 py-1 ${active ? "text-primary" : "text-muted-foreground"}`}
+            style={{ fontSize: 10, fontWeight: active ? 700 : 500 }}
+          >
+            <Icon className="w-4 h-4" />
+            {label}
+          </button>
+        );
+      })}
+    </nav>
   );
 }

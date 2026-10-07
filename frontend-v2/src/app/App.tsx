@@ -39,10 +39,13 @@ function PlanHomePage() {
 function AIBuilderPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const query =
-    (location.state as any)?.query ||
-    "5 days in Osaka with my 3 friends, food-focused, mid budget";
-  return <DesktopAIBuilder initialQuery={query} onSave={() => navigate("/trips")} />;
+  const query = (location.state as any)?.query || "";
+  return (
+    <DesktopAIBuilder
+      initialQuery={query || "Start with a destination, dates, and the people you want to travel with."}
+      onSave={(trip) => navigate(`/trips/${trip.id}`)}
+    />
+  );
 }
 
 function TripDetailPage() {

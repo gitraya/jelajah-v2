@@ -31,7 +31,7 @@ Jelajah is a collaborative travel-planning app (CS50W final project): Django RES
 - Dev: `npm run dev` (port 5174); Build: `npm run build`. Only these two scripts exist — no lint, test, or typecheck.
 
 ### Docker (full stack) — prefer the `Makefile`
-`make up` (= `docker compose up --build -d`) brings up backend (8000), frontend v1 (5173), frontend v2 (5174), and PostgreSQL (5432). `make help` lists all targets; notable ones: `make run` (foreground), `make logs`, `make down`, `make clean` (drops DB + node_modules volumes), `make up-one s=<service>`, `make sh s=<service>`, and backend helpers `make migrate` / `make makemigrations` / `make superuser` / `make test` that exec inside the backend container.
+`make up` (= `docker compose up --build -d`) brings up backend (8000), frontend v1 (5173), frontend v2 (5174), and PostgreSQL (host port 5433 → container port 5432). Containers connect to PostgreSQL at `db:5432`; host tools connect at `localhost:5433`. `make help` lists all targets; notable ones: `make run` (foreground), `make logs`, `make down`, `make clean` (drops DB + node_modules volumes), `make up-one s=<service>`, `make sh s=<service>`, and backend helpers `make migrate` / `make makemigrations` / `make superuser` / `make test` that exec inside the backend container.
 
 ## Environment
 

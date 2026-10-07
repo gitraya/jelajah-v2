@@ -4,7 +4,7 @@
 #   backend      Django REST API        http://localhost:8000
 #   frontend     React SPA (v1, prod)   http://localhost:5173
 #   frontend-v2  React SPA (v2, WIP)    http://localhost:5174
-#   db           PostgreSQL             localhost:5432
+#   db           PostgreSQL             localhost:5433 (container port 5432)
 #
 # Quick start:
 #   make up        # build (if needed) and start all services in the background

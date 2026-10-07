@@ -31,7 +31,7 @@ export function BudgetTab({ trip, canEdit }: { trip: any; canEdit: boolean }) {
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4 mb-6">
         {[
           {
             label: "Total budget",

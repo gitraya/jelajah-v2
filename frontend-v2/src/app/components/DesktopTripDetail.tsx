@@ -218,7 +218,7 @@ export function DesktopTripDetail({ onBack }: Props) {
           </p>
         </div>
 
-        <div className="absolute bottom-5 right-6 flex -space-x-2">
+        <div className="absolute bottom-5 right-3 md:right-6 flex -space-x-2">
           {(members || []).slice(0, 6).map((m: any) => (
             <UserAvatar
               key={m.id}
@@ -231,7 +231,7 @@ export function DesktopTripDetail({ onBack }: Props) {
       </div>
 
       {/* Stats strip */}
-      <div className="mx-6 mt-5 bg-secondary rounded-2xl px-6 py-4 grid grid-cols-4 gap-4">
+      <div className="mx-3 md:mx-6 mt-5 bg-secondary rounded-2xl px-3 md:px-6 py-4 grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {[
           {
             icon: Calendar,
@@ -265,12 +265,12 @@ export function DesktopTripDetail({ onBack }: Props) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mx-6 mt-5 bg-muted rounded-xl p-1 w-fit">
+      <div className="flex gap-1 mx-3 md:mx-6 mt-5 bg-muted rounded-xl p-1 w-fit max-w-[calc(100%-1.5rem)] overflow-x-auto">
         {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
-            className={`px-4 py-1.5 rounded-lg capitalize transition-all ${
+            className={`px-3 md:px-4 py-1.5 rounded-lg capitalize transition-all shrink-0 ${
               activeTab === t
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -282,7 +282,7 @@ export function DesktopTripDetail({ onBack }: Props) {
         ))}
       </div>
 
-      <div className="px-6 py-5">
+      <div className="px-3 md:px-6 py-5">
         {activeTab === "itinerary" && <ItineraryTab canEdit={canEdit} />}
         {activeTab === "budget" && <BudgetTab trip={trip} canEdit={canEdit} />}
         {activeTab === "packing" && <PackingTab canEdit={canEdit} />}

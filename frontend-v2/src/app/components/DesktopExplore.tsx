@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { useTrips } from "@/contexts/TripsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/utils";
 import { tripToDestination } from "@/lib/adapters";
 import { getTripDifficultyColor } from "@/lib/colors";
@@ -13,6 +14,7 @@ const categories = ["All", "Easy", "Moderate", "Challenging"];
 
 export function DesktopExplore() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const { publicTrips, fetchPublicTrips, joinTrip } = useTrips();
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -20,6 +22,10 @@ export function DesktopExplore() {
   const [joiningId, setJoiningId] = useState<string | null>(null);
 
   const handleJoin = async (dest: any) => {
+    if (!isAuthenticated) {
+      navigate("/login?redirect=%2Fexplore");
+      return;
+    }
     setJoiningId(dest.id);
     try {
       await joinTrip(dest.id);
@@ -54,7 +60,7 @@ export function DesktopExplore() {
   });
 
   return (
-    <div className="flex-1 overflow-y-auto px-10 py-8">
+    <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1
@@ -117,7 +123,7 @@ export function DesktopExplore() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-5 mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 mb-10">
           {filtered.map((dest: any) => (
             <div
               key={dest.id}
