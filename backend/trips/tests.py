@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from datetime import date, timedelta
 from decimal import Decimal
 
-from .models import Trip, TripMember, TripStatus, MemberStatus, MemberRole
+from .models import Trip, TripMember, TripStatus, MemberStatus, MemberRole, SavedTrip
 from users.tests import LOCAL_STORAGES
 
 User = get_user_model()
@@ -254,3 +254,222 @@ class TripCoverTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.trip.refresh_from_db()
         self.assertFalse(self.trip.cover_image)
+
+
+class TripDuplicateTests(APITestCase):
+    """POST /api/trips/<id>/duplicate/"""
+
+    def setUp(self):
+        from itineraries.models import ItineraryItem, ItineraryType, ItineraryStatus
+        from packing.models import PackingItem
+        from checklist.models import ChecklistItem
+        from expenses.models import Expense
+        from .models import Tag
+
+        self.client = APIClient()
+        self.owner = User.objects.create_user(email="dup-owner@example.com", password="testpass123")
+        self.stranger = User.objects.create_user(email="dup-stranger@example.com", password="testpass123")
+        self.start = date.today() + timedelta(days=10)
+        self.source = Trip.objects.create(
+            owner=self.owner, title="Kyoto", destination="Kyoto, Japan", description="Temples",
+            notes="Bring cash", start_date=self.start, end_date=self.start + timedelta(days=3),
+            member_spots=4, duration=4, budget=Decimal("9000000.00"), difficulty="MODERATE",
+            status=TripStatus.ONGOING, is_public=True, is_joinable=False,
+        )
+        self.tag = Tag.objects.create(name="Temples", slug="temples", usage_count=1)
+        self.source.tags.add(self.tag)
+        self.owner_member = TripMember.objects.create(trip=self.source, user=self.owner, role=MemberRole.ORGANIZER, status=MemberStatus.ACCEPTED)
+        self.it_type = ItineraryType.objects.create(name="Temple")
+        from django.utils import timezone
+        from datetime import datetime, time
+        self.visit_time = timezone.make_aware(datetime.combine(self.start + timedelta(days=1), time(9, 30)))
+        ItineraryItem.objects.create(
+            trip=self.source, name="Kinkaku-ji", type=self.it_type, visit_time=self.visit_time,
+            status=ItineraryStatus.VISITED, cost=Decimal("50000"), booking_url="https://www.shokoku-ji.jp/kinkakuji/",
+        )
+        PackingItem.objects.create(trip=self.source, name="Shoes", quantity=2, packed=True, assigned_to=self.owner_member)
+        ChecklistItem.objects.create(trip=self.source, title="Buy JR pass", is_completed=True, assigned_to=self.owner_member, due_date=self.start)
+        Expense.objects.create(trip=self.source, title="Hotel", amount=Decimal("100"), paid_by=self.owner_member)
+        self.url = reverse("trip-duplicate", kwargs={"pk": self.source.id})
+
+    def test_member_duplicates_with_defaults(self):
+        from itineraries.models import ItineraryStatus
+        self.client.force_authenticate(user=self.owner)
+        resp = self.client.post(self.url, {}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        new = Trip.objects.get(id=resp.data["id"])
+        self.assertNotEqual(new.id, self.source.id)
+        self.assertEqual(new.title, "Kyoto (copy)")
+        self.assertEqual(new.owner, self.owner)
+        self.assertEqual((new.start_date, new.end_date), (self.source.start_date, self.source.end_date))
+        self.assertEqual(new.status, TripStatus.PLANNING)
+        self.assertFalse(new.is_public)
+        self.assertFalse(new.is_joinable)
+        self.assertEqual(new.budget, self.source.budget)
+        self.assertEqual((new.member_spots, new.duration, new.difficulty), (4, 4, "MODERATE"))
+        self.assertEqual((new.description, new.notes), ("Temples", "Bring cash"))
+        self.assertEqual(list(new.tags.all()), [self.tag])
+        self.assertFalse(new.cover_image)
+        # Requester is the only member, as organizer
+        members = list(new.trip_members.all())
+        self.assertEqual(len(members), 1)
+        self.assertEqual((members[0].user, members[0].role, members[0].status), (self.owner, MemberRole.ORGANIZER, MemberStatus.ACCEPTED))
+        # Items copied with progress reset
+        item = new.itinerary_items.get()
+        self.assertEqual((item.name, item.status, item.cost, item.booking_url, item.visit_time),
+                         ("Kinkaku-ji", ItineraryStatus.PLANNED, Decimal("50000"), "https://www.shokoku-ji.jp/kinkakuji/", self.visit_time))
+        packing = new.packing_items.get()
+        self.assertEqual((packing.name, packing.quantity, packing.packed, packing.assigned_to), ("Shoes", 2, False, None))
+        check = new.checklist_items.get()
+        self.assertEqual((check.title, check.is_completed, check.assigned_to), ("Buy JR pass", False, None))
+        self.assertFalse(new.expenses.exists())
+        # Source untouched
+        self.assertEqual(self.source.itinerary_items.get().status, ItineraryStatus.VISITED)
+        # Response is a normal TripSerializer payload
+        self.assertEqual(resp.data["title"], "Kyoto (copy)")
+        self.assertIn("is_saved", resp.data)
+        self.assertEqual(resp.data["user_role"], MemberRole.ORGANIZER)
+
+    def test_title_and_start_date_shift_all_dates(self):
+        self.client.force_authenticate(user=self.owner)
+        new_start = self.start + timedelta(days=30)
+        resp = self.client.post(self.url, {"title": "Kyoto again", "start_date": new_start.isoformat()}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        new = Trip.objects.get(id=resp.data["id"])
+        self.assertEqual(new.title, "Kyoto again")
+        self.assertEqual(new.start_date, new_start)
+        self.assertEqual(new.end_date, new_start + timedelta(days=3))
+        self.assertEqual(new.itinerary_items.get().visit_time, self.visit_time + timedelta(days=30))
+        self.assertEqual(new.checklist_items.get().due_date, new_start)
+
+    def test_invalid_start_date(self):
+        self.client.force_authenticate(user=self.owner)
+        resp = self.client.post(self.url, {"start_date": "next week"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Trip.objects.count(), 1)
+
+    def test_non_member_can_duplicate_public_trip(self):
+        self.client.force_authenticate(user=self.stranger)
+        resp = self.client.post(self.url, {}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        new = Trip.objects.get(id=resp.data["id"])
+        self.assertEqual(new.owner, self.stranger)
+        self.assertEqual(list(new.trip_members.values_list("user", flat=True)), [self.stranger.id])
+
+    def test_non_member_cannot_duplicate_private_trip(self):
+        self.source.is_public = False
+        self.source.save()
+        self.client.force_authenticate(user=self.stranger)
+        resp = self.client.post(self.url, {}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(Trip.objects.count(), 1)
+
+    def test_accepted_member_can_duplicate_private_trip(self):
+        self.source.is_public = False
+        self.source.save()
+        TripMember.objects.create(trip=self.source, user=self.stranger, role=MemberRole.MEMBER, status=MemberStatus.ACCEPTED)
+        self.client.force_authenticate(user=self.stranger)
+        resp = self.client.post(self.url, {}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+    def test_anonymous_cannot_duplicate(self):
+        resp = self.client.post(self.url, {}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class TripBookmarkTests(APITestCase):
+    """POST/DELETE /api/trips/<id>/bookmark/, is_saved / saves_count, ?saved=true"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(email="bm-owner@example.com", password="testpass123")
+        self.user = User.objects.create_user(email="bm-user@example.com", password="testpass123")
+        self.public_trip = Trip.objects.create(
+            owner=self.owner, title="Public", destination="Bali", is_public=True,
+            start_date=date.today() + timedelta(days=5), end_date=date.today() + timedelta(days=7),
+        )
+        self.private_trip = Trip.objects.create(
+            owner=self.owner, title="Private", destination="Bali",
+            start_date=date.today() + timedelta(days=5), end_date=date.today() + timedelta(days=7),
+        )
+        TripMember.objects.create(trip=self.public_trip, user=self.owner, role=MemberRole.ORGANIZER, status=MemberStatus.ACCEPTED)
+        TripMember.objects.create(trip=self.private_trip, user=self.owner, role=MemberRole.ORGANIZER, status=MemberStatus.ACCEPTED)
+
+    def _url(self, trip):
+        return reverse("trip-bookmark", kwargs={"pk": trip.id})
+
+    def test_add_is_idempotent_and_remove(self):
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(self._url(self.public_trip))
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data, {"is_saved": True, "saves_count": 1})
+        resp = self.client.post(self._url(self.public_trip))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data, {"is_saved": True, "saves_count": 1})
+
+        self.client.force_authenticate(user=self.owner)
+        resp = self.client.post(self._url(self.public_trip))
+        self.assertEqual(resp.data, {"is_saved": True, "saves_count": 2})
+
+        resp = self.client.delete(self._url(self.public_trip))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data, {"is_saved": False, "saves_count": 1})
+        resp = self.client.delete(self._url(self.public_trip))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data, {"is_saved": False, "saves_count": 1})
+
+    def test_cannot_bookmark_unreadable_trip(self):
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(self._url(self.private_trip))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(SavedTrip.objects.exists())
+
+    def test_anonymous_cannot_bookmark(self):
+        resp = self.client.post(self._url(self.public_trip))
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_trip_serializer_exposes_is_saved_and_saves_count(self):
+        SavedTrip.objects.create(user=self.user, trip=self.public_trip)
+        SavedTrip.objects.create(user=self.owner, trip=self.public_trip)
+
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(reverse("trip-detail", kwargs={"pk": self.public_trip.id}))
+        self.assertTrue(resp.data["is_saved"])
+        self.assertEqual(resp.data["saves_count"], 2)
+
+        resp = self.client.get(reverse("trip-list") + "?is_public=true")
+        by_id = {t["id"]: t for t in resp.data}
+        self.assertTrue(by_id[str(self.public_trip.id)]["is_saved"])
+        self.assertEqual(by_id[str(self.public_trip.id)]["saves_count"], 2)
+
+        self.client.force_authenticate(user=None)
+        resp = self.client.get(reverse("trip-detail", kwargs={"pk": self.public_trip.id}))
+        self.assertFalse(resp.data["is_saved"])
+        self.assertEqual(resp.data["saves_count"], 2)
+
+    def test_list_saved_trips(self):
+        other_public = Trip.objects.create(
+            owner=self.owner, title="Other", destination="Lombok", is_public=True,
+            start_date=date.today() + timedelta(days=5), end_date=date.today() + timedelta(days=7),
+        )
+        SavedTrip.objects.create(user=self.user, trip=self.public_trip)
+        SavedTrip.objects.create(user=self.owner, trip=other_public)
+        # A bookmark on a trip the user can no longer read is hidden.
+        SavedTrip.objects.create(user=self.user, trip=self.private_trip)
+
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(reverse("trip-list") + "?saved=true")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([t["id"] for t in resp.data], [str(self.public_trip.id)])
+        self.assertTrue(resp.data[0]["is_saved"])
+
+        # Removing a bookmark on an unreadable trip is still allowed.
+        resp = self.client.delete(self._url(self.private_trip))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(SavedTrip.objects.filter(user=self.user, trip=self.private_trip).exists())
+
+    def test_saved_list_empty_for_anonymous(self):
+        SavedTrip.objects.create(user=self.user, trip=self.public_trip)
+        resp = self.client.get(reverse("trip-list") + "?saved=true")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data, [])

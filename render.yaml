@@ -13,7 +13,7 @@ services:
     region: singapore
     plan: free
     buildCommand: "./backend/build.sh"
-    startCommand: "cd backend && gunicorn backend.wsgi:application"
+    startCommand: "cd backend && gunicorn backend.wsgi:application --timeout 180"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -50,6 +50,9 @@ services:
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      # AI trip planner (Claude API). Empty disables /api/planner/ (503).
+      - key: ANTHROPIC_API_KEY
         sync: false
 
   # React Frontend

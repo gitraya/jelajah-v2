@@ -21,7 +21,7 @@
 
 - Read `CLAUDE.md` for the fuller architecture map, auth and email flows, deployment details, and development commands.
 - Read the target app's README and nearby code before editing. Runtime scripts and config are authoritative for commands and dependencies.
-- Backend domains are separate Django apps: `users`, `trips`, `itineraries`, `expenses`, `packing`, and `checklist`.
+- Backend domains are separate Django apps: `users`, `trips`, `itineraries`, `expenses`, `packing`, and `checklist`, plus the model-less `planner` app (AI trip planner via the Claude API).
 
 ## Completion
 

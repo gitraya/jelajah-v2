@@ -4,7 +4,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.text import slugify
 from django.contrib.auth import get_user_model
-from .models import Trip, TripMember, MemberStatus, MemberRole, TripStatus, Tag
+from .models import Trip, TripMember, MemberStatus, MemberRole, TripStatus, Tag, SavedTrip
+from .services import create_trip_for_owner
 from expenses.models import ExpenseSplit, Expense
 from itineraries.models import ItineraryItem, ItineraryStatus
 from backend.images import process_image
@@ -174,6 +175,8 @@ class TripSerializer(serializers.ModelSerializer):
     )
     spent_budget = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     user_role = serializers.CharField(read_only=True)
+    is_saved = serializers.SerializerMethodField()
+    saves_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Trip
@@ -233,11 +236,7 @@ class TripSerializer(serializers.ModelSerializer):
             )
             tags.append(tag)
         
-        trip = Trip.objects.create(owner=owner, **validated_data)
-        trip.tags.set(tags)
-        TripMember.objects.create(user=owner, trip=trip, status=MemberStatus.ACCEPTED, role=MemberRole.ORGANIZER)
-
-        return trip
+        return create_trip_for_owner(owner, tags=tags, **validated_data)
     
     def update(self, instance, validated_data):
         """Remove owner because we don't want to update it"""
@@ -296,6 +295,20 @@ class TripSerializer(serializers.ModelSerializer):
         if user == obj.owner and obj.status != TripStatus.DELETED:
             return True
         return False
+
+    def get_is_saved(self, obj):
+        # TripViewSet annotates `is_saved`; fall back to a query elsewhere.
+        if hasattr(obj, 'is_saved'):
+            return bool(obj.is_saved)
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return SavedTrip.objects.filter(trip=obj, user=request.user).exists()
+
+    def get_saves_count(self, obj):
+        if hasattr(obj, 'saves_count'):
+            return obj.saves_count
+        return SavedTrip.objects.filter(trip=obj).count()
 
     def get_is_member(self, obj):
         request = self.context.get('request')

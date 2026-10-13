@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'expenses',
     'packing',
     'checklist',
+    'planner',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'allauth',
@@ -212,6 +213,8 @@ REST_FRAMEWORK = {
         "user": "500/hour",
         "resend_set_password_email": "3/hour",
         "uploads": "20/hour",
+        "planner": "20/hour",
+        "planner_save": "30/hour",
     },
 }
 
@@ -336,6 +339,11 @@ LOGGING = {
         'level': 'INFO',
     },
 }
+
+# AI trip planner (planner app, Claude API). Empty key makes /api/planner/
+# endpoints return 503 instead of calling the API.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "") or "claude-opus-5-5"
 
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 

@@ -72,3 +72,18 @@ class Trip(BaseModel):
     
     class Meta:
         ordering = ['-start_date']
+
+
+class SavedTrip(BaseModel):
+    """A user's bookmark on a trip (public trips from Explore, or their own)."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='saved_trips')
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='saves')
+
+    def __str__(self):
+        return f"{self.user.email} saved {self.trip.title}"
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'trip'], name='unique_saved_trip'),
+        ]

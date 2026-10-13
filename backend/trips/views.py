@@ -4,14 +4,17 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
-from django.db.models import Q
+from django.db.models import Q, Count, Exists, OuterRef, Subquery, Value, BooleanField
+from django.db.models.functions import Coalesce
+from django.utils.dateparse import parse_date
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.contrib.auth.tokens import default_token_generator
 
-from .models import Trip, TripStatus, MemberStatus, TripMember, Tag
+from .models import Trip, TripStatus, MemberStatus, TripMember, Tag, SavedTrip
 from .serializers import TripSerializer, TripMemberSerializer, TagSerializer, TripCoverSerializer
 from .permissions import IsTripAccessible, IsMemberAccessible
+from .services import duplicate_trip
 from expenses.models import ExpenseSplit
 from itineraries.models import ItineraryItem
 from checklist.models import ChecklistItem
@@ -37,10 +40,22 @@ class TripViewSet(ModelViewSet):
 
     def get_queryset(self):
         qs = Trip.objects.select_related('owner').prefetch_related('trip_members__user').all()
+        qs = self._annotate_saves(qs)
         
         if self.action == "list":
             is_public = self.request.query_params.get("is_public")
-            if not self.request.user.is_authenticated or is_public:
+            saved = self.request.query_params.get("saved", "").lower() in ("true", "1")
+            if saved:
+                # Bookmarked trips the user can still read.
+                user = self.request.user
+                if not user.is_authenticated:
+                    return qs.none()
+                qs = qs.filter(saves__user=user).filter(
+                    Q(is_public=True) |
+                    Q(owner=user) |
+                    Q(trip_members__user=user, trip_members__status=MemberStatus.ACCEPTED)
+                ).exclude(status=TripStatus.DELETED).distinct()
+            elif not self.request.user.is_authenticated or is_public:
                 qs = qs.filter(is_public=True).exclude(status=TripStatus.DELETED).exclude(status=TripStatus.CANCELLED)
             else:
                 user = self.request.user
@@ -67,6 +82,15 @@ class TripViewSet(ModelViewSet):
                 qs = qs.filter(Q(title__icontains=search) | Q(destination__icontains=search) | Q(tags__name__icontains=search)).distinct()
 
         return qs
+
+    def _annotate_saves(self, qs):
+        """Annotate `saves_count` and `is_saved` (read by TripSerializer) to avoid N+1 queries."""
+        saves = SavedTrip.objects.filter(trip=OuterRef('pk')).order_by().values('trip').annotate(c=Count('id')).values('c')
+        qs = qs.annotate(saves_count=Coalesce(Subquery(saves), 0))
+        user = self.request.user
+        if user.is_authenticated:
+            return qs.annotate(is_saved=Exists(SavedTrip.objects.filter(trip=OuterRef('pk'), user=user)))
+        return qs.annotate(is_saved=Value(False, output_field=BooleanField()))
     
     def destroy(self, request, *args, **kwargs):
         trip = self.get_object()
@@ -80,6 +104,45 @@ class TripViewSet(ModelViewSet):
         if self.action == 'cover' and self.request.method == 'PUT':
             self.throttle_scope = 'uploads'
         return super().get_throttles()
+
+    @action(detail=True, methods=['post'], url_path='duplicate')
+    def duplicate(self, request, pk=None):
+        """Copy a readable trip (own or public) into a new private trip owned by the requester."""
+        source = self.get_object()
+
+        title = request.data.get('title') or None
+        if title is not None:
+            title = str(title).strip()[:255] or None
+
+        start_date = None
+        raw_start_date = request.data.get('start_date')
+        if raw_start_date:
+            try:
+                start_date = parse_date(str(raw_start_date))
+            except ValueError:
+                start_date = None
+            if start_date is None:
+                return Response({"start_date": ["Invalid date format, expected YYYY-MM-DD."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        trip = duplicate_trip(source, request.user, title=title, start_date=start_date)
+        trip = self._annotate_saves(Trip.objects.filter(pk=trip.pk)).get()
+        return Response(TripSerializer(trip, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post', 'delete'], url_path='bookmark')
+    def bookmark(self, request, pk=None):
+        """Save (POST, idempotent) or unsave (DELETE) a trip for the requester."""
+        trip = self.get_object()
+        if request.method == 'DELETE':
+            SavedTrip.objects.filter(user=request.user, trip=trip).delete()
+            is_saved, response_status = False, status.HTTP_200_OK
+        else:
+            _, created = SavedTrip.objects.get_or_create(user=request.user, trip=trip)
+            is_saved = True
+            response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response({
+            "is_saved": is_saved,
+            "saves_count": SavedTrip.objects.filter(trip=trip).count(),
+        }, status=response_status)
 
     @action(detail=True, methods=['put', 'delete'], url_path='cover', parser_classes=[MultiPartParser, FormParser])
     def cover(self, request, pk=None):

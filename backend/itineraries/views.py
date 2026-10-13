@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions, generics
+from django.db.models import Sum
 from rest_framework.response import Response
 from backend.permissions import IsStatisticAccessible
 from .models import ItineraryType, ItineraryItem
@@ -50,10 +51,12 @@ class ItineraryItemStatisticsView(generics.RetrieveAPIView):
         visited = ItineraryItem.objects.filter(trip_id=trip_id, status='VISITED').count()
         planned = ItineraryItem.objects.filter(trip_id=trip_id, status='PLANNED').count()
         skipped = ItineraryItem.objects.filter(trip_id=trip_id, status='SKIPPED').count()
+        total_cost = ItineraryItem.objects.filter(trip_id=trip_id).aggregate(total=Sum('cost'))['total'] or 0
 
         return Response({
             "total": total,
             "visited": visited,
             "planned": planned,
-            "skipped": skipped
+            "skipped": skipped,
+            "total_cost": f"{total_cost:.2f}",
         })

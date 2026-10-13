@@ -25,8 +25,15 @@ class ItineraryItemSerializer(serializers.ModelSerializer):
             'visit_time',
             'notes',
             'status',
-            'type_id'
+            'type_id',
+            'cost',
+            'booking_url',
         ]
+
+    def validate_cost(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Cost cannot be negative.")
+        return value
     
     def validate_visit_time(self, value):
         trip_id = self.context['trip_id']

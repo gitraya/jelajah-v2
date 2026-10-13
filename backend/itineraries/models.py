@@ -30,6 +30,8 @@ class ItineraryItem(BaseModel):
     notes = models.TextField(blank=True, max_length=2000)
     status = models.CharField(max_length=10, choices=ItineraryStatus.choices, default=ItineraryStatus.PLANNED)
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='itinerary_items')
+    cost = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True, help_text="Estimated cost per person in IDR")
+    booking_url = models.URLField(max_length=500, blank=True)
     
     
     def __str__(self):
