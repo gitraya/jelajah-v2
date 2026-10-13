@@ -1,4 +1,5 @@
 import { getInitials } from "@/lib/utils";
+import { ITINERARY_TYPES_ICONS } from "@/config";
 
 export const MEMBER_COLORS = [
   "#16B364",
@@ -117,5 +118,84 @@ export const tripToDestination = (trip: any) => ({
   budget: formatRp(trip.budget),
   members: trip.members_count ?? 0,
   status: trip.status,
+  isSaved: Boolean(trip.is_saved),
+  savesCount: trip.saves_count ?? 0,
   raw: trip,
 });
+
+// "Rp 2.8M" / "Rp 120K" / "Rp 500" — compact IDR for tight UI (prices, stats).
+export const formatRpShort = (amount?: number | string | null) => {
+  const n = Number(amount || 0);
+  const abs = Math.abs(n);
+  const trim = (v: number) => String(Math.round(v * 10) / 10);
+  if (abs >= 1_000_000_000) return `Rp ${trim(n / 1_000_000_000)}B`;
+  if (abs >= 1_000_000) return `Rp ${trim(n / 1_000_000)}M`;
+  if (abs >= 1_000) return `Rp ${Math.round(n / 1_000)}K`;
+  return `Rp ${Math.round(n)}`;
+};
+
+/**
+ * Itinerary stop price label. `cost` is IDR per person: null/"" = unknown
+ * (no label), 0 = "Free", otherwise full ("Rp 2.800.000") or compact.
+ */
+export const stopPrice = (
+  cost: number | string | null | undefined,
+  short = false
+): { label: string; free: boolean } | null => {
+  if (cost === null || cost === undefined || cost === "") return null;
+  const n = Number(cost);
+  if (Number.isNaN(n)) return null;
+  if (n === 0) return { label: "Free", free: true };
+  return { label: short ? formatRpShort(n) : formatRp(n), free: false };
+};
+
+/** Emoji for an itinerary type name (backend ItineraryType.name). */
+export const stopIcon = (typeName?: string | null) =>
+  (typeName && ITINERARY_TYPES_ICONS[typeName]) || "📍";
+
+// Backend trip -> compact "Community itineraries" card on Explore.
+export const tripToTemplate = (trip: any) => {
+  const owner = trip.owner || {};
+  return {
+    id: trip.id,
+    title: trip.title,
+    destination: trip.destination,
+    owner,
+    author: memberName(owner),
+    days: trip.duration || 0,
+    budget: formatRpShort(trip.budget),
+    saves: trip.saves_count ?? 0,
+    isSaved: Boolean(trip.is_saved),
+    raw: trip,
+  };
+};
+
+// "YYYY-MM-DD" parsed as a local date (new Date("YYYY-MM-DD") is UTC).
+const localDate = (d?: string | null) =>
+  d ? new Date(`${d.slice(0, 10)}T00:00:00`) : null;
+
+/** "12–16 Sep 2026", "30 Sep – 3 Oct 2026", or "28 Dec 2026 – 2 Jan 2027". */
+export const formatDateRange = (start?: string | null, end?: string | null) => {
+  const s = localDate(start);
+  const e = localDate(end) || s;
+  if (!s || !e || Number.isNaN(s.getTime())) return "";
+  const day = (d: Date) => d.getDate();
+  const mon = (d: Date) => d.toLocaleDateString("en-GB", { month: "short" });
+  if (s.getFullYear() !== e.getFullYear())
+    return `${day(s)} ${mon(s)} ${s.getFullYear()} – ${day(e)} ${mon(e)} ${e.getFullYear()}`;
+  if (s.getMonth() !== e.getMonth())
+    return `${day(s)} ${mon(s)} – ${day(e)} ${mon(e)} ${e.getFullYear()}`;
+  if (day(s) === day(e)) return `${day(s)} ${mon(s)} ${s.getFullYear()}`;
+  return `${day(s)}–${day(e)} ${mon(s)} ${s.getFullYear()}`;
+};
+
+/** "Fri 12 Sep" for a "YYYY-MM-DD" day. */
+export const formatDayLabel = (d?: string | null) => {
+  const date = localDate(d);
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+};

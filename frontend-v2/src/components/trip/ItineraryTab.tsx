@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertCircle, CheckCircle, Clock, Plus } from "lucide-react";
+import { AlertCircle, CheckCircle, Clock, ExternalLink, Plus } from "lucide-react";
 
 import {
   Select,
@@ -8,10 +8,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/components/ui/select";
-import { ITINERARY_STATUSES, ITINERARY_TYPES_ICONS } from "@/config";
+import { ITINERARY_STATUSES } from "@/config";
 import { useItineraries } from "@/contexts/ItinerariesContext";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { ItineraryFormModal } from "@/components/modals/ItineraryFormModal";
+import { formatRp, stopIcon, stopPrice } from "@/lib/adapters";
 import { formatDate } from "@/lib/utils";
 import { AddButton, EmptyState, ItemActions } from "./ItemActions";
 
@@ -108,6 +109,15 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
           <p className="text-muted-foreground" style={{ fontSize: 12 }}>
             {statistics.visited ?? 0} visited · {statistics.planned ?? 0} planned
             · {statistics.skipped ?? 0} skipped
+            {Number(statistics.total_cost || 0) > 0 ? (
+              <>
+                {" · "}
+                <span className="text-foreground" style={{ fontWeight: 700 }}>
+                  {formatRp(statistics.total_cost)}
+                </span>{" "}
+                per person
+              </>
+            ) : null}
           </p>
         ) : null}
 
@@ -162,6 +172,7 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
                   const si = statusIcon[stop.status] || statusIcon.PLANNED;
                   const SIcon = si.icon;
                   const tName = typeName(stop);
+                  const price = stopPrice(stop.cost);
                   return (
                     <div
                       key={stop.id}
@@ -179,7 +190,7 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
                           : "—"}
                       </span>
                       <span className="text-lg shrink-0">
-                        {ITINERARY_TYPES_ICONS[tName] || "📍"}
+                        {stopIcon(tName)}
                       </span>
                       <div className="flex-1 min-w-0">
                         <p
@@ -194,7 +205,31 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
                         >
                           {stop.address || stop.estimated_time || tName}
                         </p>
+                        {stop.booking_url ? (
+                          <a
+                            href={stop.booking_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 mt-1 hover:bg-primary hover:text-white transition-colors"
+                          >
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            <span style={{ fontSize: 10, fontWeight: 600 }}>
+                              Booking link added
+                            </span>
+                          </a>
+                        ) : null}
                       </div>
+
+                      {price ? (
+                        <span
+                          className={`shrink-0 mt-0.5 ${
+                            price.free ? "text-primary" : "text-foreground"
+                          }`}
+                          style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}
+                        >
+                          {price.label}
+                        </span>
+                      ) : null}
 
                       {canEdit ? (
                         <ItemActions

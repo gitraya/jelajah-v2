@@ -1,4 +1,11 @@
-import { Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import {
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 
 import { Toaster } from "./components/ui/sonner";
 import { DesktopAIBuilder } from "./components/DesktopAIBuilder";
@@ -39,10 +46,14 @@ function PlanHomePage() {
 function AIBuilderPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const query = (location.state as any)?.query || "";
+  const [searchParams] = useSearchParams();
+  // Plan home passes the prompt as router state; ?q= survives a login redirect.
+  // Empty means the builder asks where they want to go.
+  const query: string =
+    (location.state as any)?.query || searchParams.get("q") || "";
   return (
     <DesktopAIBuilder
-      initialQuery={query || "Start with a destination, dates, and the people you want to travel with."}
+      initialQuery={query}
       onSave={(trip) => navigate(`/trips/${trip.id}`)}
     />
   );

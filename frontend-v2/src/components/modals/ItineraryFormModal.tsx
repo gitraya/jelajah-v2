@@ -46,6 +46,8 @@ const emptyForm = {
   notes: "",
   latitude: "",
   longitude: "",
+  cost: "",
+  booking_url: "",
 };
 
 export function ItineraryFormModal({ open, onOpenChange, item }: Props) {
@@ -72,6 +74,12 @@ export function ItineraryFormModal({ open, onOpenChange, item }: Props) {
             notes: item.notes || "",
             latitude: item.latitude ?? "",
             longitude: item.longitude ?? "",
+            // Decimal strings like "120000.00" read better as whole rupiah.
+            cost:
+              item.cost === null || item.cost === undefined || item.cost === ""
+                ? ""
+                : String(Math.round(Number(item.cost))),
+            booking_url: item.booking_url || "",
           }
         : emptyForm
     );
@@ -80,10 +88,15 @@ export function ItineraryFormModal({ open, onOpenChange, item }: Props) {
   const set = (key: string, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  const bookingUrl = form.booking_url.trim();
   const validationError = !form.name.trim()
     ? "Name is required."
     : !form.type_id
     ? "Please choose a type."
+    : form.cost !== "" && (Number.isNaN(Number(form.cost)) || Number(form.cost) < 0)
+    ? "Price must be 0 (free) or more."
+    : bookingUrl && !/^https?:\/\/\S+$/i.test(bookingUrl)
+    ? "Booking link must start with http:// or https://."
     : null;
 
   const handleSubmit = async () => {
@@ -98,6 +111,9 @@ export function ItineraryFormModal({ open, onOpenChange, item }: Props) {
       visit_time: form.visit_time ? new Date(form.visit_time).toISOString() : null,
       latitude: form.latitude === "" ? null : form.latitude,
       longitude: form.longitude === "" ? null : form.longitude,
+      // Blank = unknown (null); 0 = free.
+      cost: form.cost === "" ? null : form.cost,
+      booking_url: bookingUrl,
     };
     return item
       ? updateItinerary(item.id, payload)
@@ -177,6 +193,34 @@ export function ItineraryFormModal({ open, onOpenChange, item }: Props) {
             value={form.estimated_time}
             onChange={(e) => set("estimated_time", e.target.value)}
             placeholder="2-3 hours"
+          />
+        </Field>
+      </FieldRow>
+
+      <FieldRow>
+        <Field
+          label="Price per person (IDR)"
+          htmlFor="it-cost"
+          hint="Leave blank if unknown, 0 if free."
+        >
+          <Input
+            id="it-cost"
+            type="number"
+            min={0}
+            step="any"
+            inputMode="numeric"
+            value={form.cost}
+            onChange={(e) => set("cost", e.target.value)}
+            placeholder="120000"
+          />
+        </Field>
+        <Field label="Booking link" htmlFor="it-booking">
+          <Input
+            id="it-booking"
+            type="url"
+            value={form.booking_url}
+            onChange={(e) => set("booking_url", e.target.value)}
+            placeholder="https://…"
           />
         </Field>
       </FieldRow>

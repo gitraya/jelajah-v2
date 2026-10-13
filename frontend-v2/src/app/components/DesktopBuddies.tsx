@@ -3,6 +3,7 @@ import { Calendar, Check, MapPin, Search, UserPlus, X } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
+import { InviteBuddyModal } from "@/components/modals/InviteBuddyModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTrips } from "@/contexts/TripsContext";
 import { useApi } from "@/hooks/useApi";
@@ -44,6 +45,9 @@ export function DesktopBuddies() {
   const [buddies, setBuddies] = useState<Buddy[]>([]);
   const [pending, setPending] = useState<PendingInvite[]>([]);
   const [resolved, setResolved] = useState<Set<string>>(new Set());
+  /** null = closed; {} = generic invite; a Buddy = invite that person. */
+  const [inviting, setInviting] = useState<Buddy | {} | null>(null);
+  const invitee = inviting && "userId" in inviting ? inviting : null;
 
   useEffect(() => {
     fetchMyTrips();
@@ -151,16 +155,26 @@ export function DesktopBuddies() {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
-      <div className="mb-6">
-        <h1
-          className="text-foreground mb-1"
-          style={{ fontWeight: 800, fontSize: 30, letterSpacing: "-0.03em" }}
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <div>
+          <h1
+            className="text-foreground mb-1"
+            style={{ fontWeight: 800, fontSize: 30, letterSpacing: "-0.03em" }}
+          >
+            Travel <span className="text-primary">buddies</span>
+          </h1>
+          <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+            People you've travelled with across your trips
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setInviting({})}
+          className="bg-primary text-white rounded-2xl px-5 py-2.5 flex items-center gap-2 hover:bg-[#13a058] transition-colors"
+          style={{ fontSize: 14, fontWeight: 600 }}
         >
-          Travel <span className="text-primary">buddies</span>
-        </h1>
-        <p className="text-muted-foreground" style={{ fontSize: 14 }}>
-          People you've travelled with across your trips
-        </p>
+          <UserPlus className="w-4 h-4" /> Invite a buddy
+        </button>
       </div>
 
       {openInvites.length > 0 && (
@@ -316,10 +330,29 @@ export function DesktopBuddies() {
                   </span>
                 )}
               </div>
+
+              <button
+                type="button"
+                onClick={() => setInviting(b)}
+                className="mt-3 w-full border-2 border-dashed border-border rounded-xl py-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                style={{ fontSize: 12, fontWeight: 500 }}
+              >
+                + Invite to a trip
+              </button>
             </div>
           ))}
         </div>
       )}
+
+      <InviteBuddyModal
+        open={inviting !== null}
+        onOpenChange={(open) => !open && setInviting(null)}
+        email={invitee?.email || undefined}
+        name={invitee?.name}
+        excludeTripIds={invitee?.sharedTrips.map((t) => t.id)}
+        // Refetching trips re-derives buddies, picking up the new membership.
+        onInvited={() => fetchMyTrips()}
+      />
     </div>
   );
 }

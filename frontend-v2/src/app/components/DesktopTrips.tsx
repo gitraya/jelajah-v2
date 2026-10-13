@@ -17,6 +17,7 @@ import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { TripFormModal } from "@/components/modals/TripFormModal";
 import { useTrips } from "@/contexts/TripsContext";
 import { tripToCard } from "@/lib/adapters";
+import { getErrorMessage } from "@/lib/utils";
 
 type TripFilter = "all" | "upcoming" | "planning" | "past";
 
@@ -39,6 +40,7 @@ export function DesktopTrips() {
     uploadTripCover,
     removeTripCover,
     deleteTrip,
+    duplicateTrip,
   } = useTrips();
 
   const [filter, setFilter] = useState<TripFilter>("all");
@@ -75,9 +77,49 @@ export function DesktopTrips() {
       case "Open":
         navigate(`/trips/${trip.id}`);
         break;
+      case "Duplicate":
+        handleDuplicate(trip);
+        break;
+      case "Share":
+        handleShare(trip);
+        break;
       case "Delete":
         setDeleting(trip);
         break;
+    }
+  };
+
+  // Edit/Delete only show when the API says this user may do them.
+  const menuItems = (trip: any) =>
+    [
+      "Open",
+      trip.raw?.is_editable ? "Edit trip" : null,
+      "Duplicate",
+      "Share",
+      trip.raw?.is_deletable ?? trip.raw?.is_editable ? "Delete" : null,
+    ].filter(Boolean) as string[];
+
+  const handleDuplicate = async (trip: any) => {
+    try {
+      const copy = await duplicateTrip(trip.id);
+      toast.success("Trip duplicated", { description: copy?.title });
+      fetchMyTrips();
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not duplicate this trip"));
+    }
+  };
+
+  const handleShare = async (trip: any) => {
+    const url = `${window.location.origin}/trips/${trip.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Share link copied", {
+        description: trip.raw?.is_public
+          ? url
+          : "This trip is private — only its members can open the link.",
+      });
+    } catch {
+      toast.error("Could not copy the link", { description: url });
     }
   };
 
@@ -205,7 +247,7 @@ export function DesktopTrips() {
                       </button>
                       {openMenu === trip.id && (
                         <div className="absolute right-0 top-10 bg-card border border-border rounded-xl shadow-lg z-20 py-1 w-36">
-                          {["Open", "Edit trip", "Delete"].map((item) => (
+                          {menuItems(trip).map((item) => (
                             <button
                               key={item}
                               onClick={() => handleMenuAction(item, trip)}

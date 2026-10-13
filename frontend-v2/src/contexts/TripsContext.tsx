@@ -154,6 +154,49 @@ export const TripsProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  // Copies a trip (its itinerary, packing and checklist too) into a new
+  // PLANNING trip owned by the requester. Also powers "Use as template".
+  const duplicateTrip = useCallback(
+    async (id: string, data: { title?: string; start_date?: string } = {}) => {
+      const response = await postRequest(`/trips/${id}/duplicate/`, data);
+      const trip = withTripLabels(response.data);
+      setMyTrips((prev) => [trip, ...prev.filter((t) => t.id !== trip.id)]);
+      return trip;
+    },
+    []
+  );
+
+  // Optimistic bookmark toggle; the server's counts win once it replies.
+  const toggleBookmark = useCallback(
+    async (id: string, save: boolean) => {
+      const patch = (fields: (t: any) => Record<string, any>) => {
+        const apply = (list: any[]) =>
+          list.map((t) => (t.id === id ? { ...t, ...fields(t) } : t));
+        setPublicTrips(apply);
+        setMyTrips(apply);
+      };
+      patch((t) => ({
+        is_saved: save,
+        saves_count: Math.max(0, (t.saves_count ?? 0) + (save ? 1 : -1)),
+      }));
+      try {
+        const response = save
+          ? await postRequest(`/trips/${id}/bookmark/`, {})
+          : await deleteRequest(`/trips/${id}/bookmark/`);
+        const { is_saved, saves_count } = response.data || {};
+        patch(() => ({ is_saved, saves_count }));
+        return response.data;
+      } catch (error) {
+        patch((t) => ({
+          is_saved: !save,
+          saves_count: Math.max(0, (t.saves_count ?? 0) + (save ? -1 : 1)),
+        }));
+        throw error;
+      }
+    },
+    []
+  );
+
   return (
     <TripsContext.Provider
       value={{
@@ -172,6 +215,8 @@ export const TripsProvider = ({ children }: { children: ReactNode }) => {
         removeTripCover,
         deleteTrip,
         joinTrip,
+        duplicateTrip,
+        toggleBookmark,
       }}
     >
       {children}

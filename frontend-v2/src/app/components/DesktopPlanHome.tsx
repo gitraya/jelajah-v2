@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Pencil, Compass, ArrowRight } from "lucide-react";
+import { Sparkles, Pencil, Copy, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { TripFormModal } from "@/components/modals/TripFormModal";
@@ -104,7 +104,7 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
           className="bg-primary text-white rounded-xl px-5 py-2 flex items-center gap-2 hover:bg-[#13a058] transition-colors shrink-0"
           style={{ fontSize: 14, fontWeight: 600 }}
         >
-          Continue <ArrowRight className="w-4 h-4" />
+          Plan it <ArrowRight className="w-4 h-4" />
         </button>
       </div>
 
@@ -147,15 +147,15 @@ export function DesktopPlanHome({ onPlanIt }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => navigate("/explore")}
+          onClick={() => navigate("/explore#templates")}
           className="text-left bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer group"
         >
           <div className="w-10 h-10 bg-secondary rounded-xl flex items-center justify-center mb-3">
-            <Compass className="w-5 h-5 text-primary" strokeWidth={2} />
+            <Copy className="w-5 h-5 text-primary" strokeWidth={2} />
           </div>
-          <p className="text-foreground mb-1" style={{ fontWeight: 700, fontSize: 15 }}>Explore community trips</p>
+          <p className="text-foreground mb-1" style={{ fontWeight: 700, fontSize: 15 }}>Start from a template</p>
           <p className="text-muted-foreground" style={{ fontSize: 13, lineHeight: 1.5 }}>
-            Browse public trips for ideas and request to join one.
+            Copy a ready-made itinerary from the community and tweak it.
           </p>
         </button>
       </div>

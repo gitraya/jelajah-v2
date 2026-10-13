@@ -114,6 +114,10 @@ export const ItinerariesProvider = ({ children }: { children: ReactNode }) => {
           total: prev.total + 1,
           [response.data.status.toLowerCase()]:
             (prev[response.data.status.toLowerCase()] || 0) + 1,
+          // total_cost sums non-null per-person costs (string decimal).
+          total_cost: String(
+            Number(prev.total_cost || 0) + Number(response.data.cost || 0)
+          ),
         }));
 
         return response.data;
@@ -142,6 +146,12 @@ export const ItinerariesProvider = ({ children }: { children: ReactNode }) => {
         total: prev.total - 1,
         [deletedLocation.status.toLowerCase()]:
           (prev[deletedLocation.status.toLowerCase()] || 1) - 1,
+        total_cost: String(
+          Math.max(
+            0,
+            Number(prev.total_cost || 0) - Number(deletedLocation.cost || 0)
+          )
+        ),
       }));
 
       deleteRequest(`/trips/${tripId}/itineraries/items/${id}/`);
