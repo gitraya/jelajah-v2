@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from backend.models import BaseModel
 
 class TripStatus(models.TextChoices):
@@ -86,4 +87,22 @@ class SavedTrip(BaseModel):
         ordering = ['-created_at']
         constraints = [
             models.UniqueConstraint(fields=['user', 'trip'], name='unique_saved_trip'),
+        ]
+
+
+class TripReview(BaseModel):
+    """A user's 1–5 star rating (and optional comment) of a trip; one per user per trip."""
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='reviews')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='trip_reviews')
+    rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comment = models.TextField(max_length=1000, blank=True)
+
+    def __str__(self):
+        return f"{self.user.email} rated {self.trip.title} {self.rating}/5"
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['trip', 'user'], name='unique_trip_review'),
+            models.CheckConstraint(condition=models.Q(rating__gte=1, rating__lte=5), name='trip_review_rating_range'),
         ]

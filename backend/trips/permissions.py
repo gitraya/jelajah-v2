@@ -7,14 +7,17 @@ class IsTripAccessible(BasePermission):
     - Authenticated users can view trips they own or are a member of
     - Only owners or members other than 'MEMBER' can update trips
     - Only owners can delete trips
-    - Anyone who can view a trip can duplicate or bookmark it; removing a
-      bookmark is always allowed so stale bookmarks can be cleared
+    - Anyone who can view a trip can duplicate, bookmark or review it (reviews
+      add their own owner/member rules in the view); removing a bookmark or
+      one's own review is always allowed so stale rows can be cleared
     """
 
-    READ_ACTIONS = ["retrieve", "list", "duplicate", "bookmark"]
+    READ_ACTIONS = ["retrieve", "list", "duplicate", "bookmark", "reviews"]
 
     def has_object_permission(self, request, view, obj):
         if view.action == "bookmark" and request.method == "DELETE":
+            return True
+        if view.action == "my_review":
             return True
         if view.action in self.READ_ACTIONS:
             if obj.status == TripStatus.DELETED:

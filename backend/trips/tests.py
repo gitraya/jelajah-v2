@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from datetime import date, timedelta
 from decimal import Decimal
 
-from .models import Trip, TripMember, TripStatus, MemberStatus, MemberRole, SavedTrip
+from .models import Trip, TripMember, TripStatus, MemberStatus, MemberRole, SavedTrip, TripReview
 from users.tests import LOCAL_STORAGES
 
 User = get_user_model()
@@ -473,3 +473,133 @@ class TripBookmarkTests(APITestCase):
         resp = self.client.get(reverse("trip-list") + "?saved=true")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data, [])
+
+
+class TripReviewTests(APITestCase):
+    """GET/POST /api/trips/<id>/reviews/, DELETE .../reviews/mine/, rating fields on TripSerializer."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(email="rv-owner@example.com", password="x", first_name="Owner")
+        self.member = User.objects.create_user(email="rv-member@example.com", password="x", first_name="Member")
+        self.visitor = User.objects.create_user(email="rv-visitor@example.com", password="x", first_name="Visitor")
+        self.outsider = User.objects.create_user(email="rv-outsider@example.com", password="x")
+        dates = {"start_date": date.today() + timedelta(days=5), "end_date": date.today() + timedelta(days=7)}
+        self.public_trip = Trip.objects.create(owner=self.owner, title="Public", destination="Bali", is_public=True, **dates)
+        self.private_trip = Trip.objects.create(owner=self.owner, title="Private", destination="Bali", **dates)
+        for trip in (self.public_trip, self.private_trip):
+            TripMember.objects.create(trip=trip, user=self.owner, role=MemberRole.ORGANIZER, status=MemberStatus.ACCEPTED)
+        TripMember.objects.create(trip=self.private_trip, user=self.member, status=MemberStatus.ACCEPTED)
+
+    def _url(self, trip):
+        return reverse("trip-reviews", kwargs={"pk": trip.id})
+
+    def _mine_url(self, trip):
+        return reverse("trip-reviews-mine", kwargs={"pk": trip.id})
+
+    def test_create_then_update_is_an_upsert(self):
+        self.client.force_authenticate(user=self.visitor)
+        resp = self.client.post(self._url(self.public_trip), {"rating": 4, "comment": "Great"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(resp.data["rating"], 4)
+        self.assertEqual(resp.data["comment"], "Great")
+        self.assertEqual(
+            set(resp.data["user"]), {"id", "first_name", "last_name", "email", "avatar"},
+        )
+        review_id = resp.data["id"]
+
+        resp = self.client.post(self._url(self.public_trip), {"rating": 2}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["id"], review_id)
+        self.assertEqual(resp.data["rating"], 2)
+        self.assertEqual(TripReview.objects.filter(trip=self.public_trip).count(), 1)
+
+    def test_list_newest_first_and_readable_by_anonymous_on_public_trip(self):
+        TripReview.objects.create(trip=self.public_trip, user=self.visitor, rating=5)
+        TripReview.objects.create(trip=self.public_trip, user=self.outsider, rating=3, comment="ok")
+        resp = self.client.get(self._url(self.public_trip))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([r["rating"] for r in resp.data], [3, 5])
+        self.assertEqual(
+            set(resp.data[0]), {"id", "user", "rating", "comment", "created_at", "updated_at"},
+        )
+
+    def test_private_trip_reviews_hidden_from_non_members(self):
+        self.client.force_authenticate(user=self.outsider)
+        self.assertEqual(self.client.get(self._url(self.private_trip)).status_code, status.HTTP_403_FORBIDDEN)
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(self._url(self.private_trip)).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_owner_cannot_review_own_trip(self):
+        self.client.force_authenticate(user=self.owner)
+        resp = self.client.post(self._url(self.public_trip), {"rating": 5}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(TripReview.objects.exists())
+
+    def test_private_trip_member_can_review_but_non_member_cannot(self):
+        self.client.force_authenticate(user=self.outsider)
+        resp = self.client.post(self._url(self.private_trip), {"rating": 5}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(user=self.member)
+        resp = self.client.post(self._url(self.private_trip), {"rating": 5}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+    def test_anonymous_cannot_review(self):
+        resp = self.client.post(self._url(self.public_trip), {"rating": 5}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_rating_and_comment_validation(self):
+        self.client.force_authenticate(user=self.visitor)
+        for payload in ({"rating": 0}, {"rating": 6}, {"rating": "abc"}, {}, {"rating": 3, "comment": "x" * 1001}):
+            resp = self.client.post(self._url(self.public_trip), payload, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, payload)
+        self.assertFalse(TripReview.objects.exists())
+
+    def test_delete_mine(self):
+        TripReview.objects.create(trip=self.public_trip, user=self.visitor, rating=5)
+        TripReview.objects.create(trip=self.public_trip, user=self.outsider, rating=1)
+        self.client.force_authenticate(user=self.visitor)
+        resp = self.client.delete(self._mine_url(self.public_trip))
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(list(TripReview.objects.values_list("user_id", flat=True)), [self.outsider.id])
+        # Idempotent.
+        self.assertEqual(self.client.delete(self._mine_url(self.public_trip)).status_code, status.HTTP_204_NO_CONTENT)
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.delete(self._mine_url(self.public_trip)).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_trip_serializer_rating_fields(self):
+        detail = reverse("trip-detail", kwargs={"pk": self.public_trip.id})
+        self.client.force_authenticate(user=self.visitor)
+        resp = self.client.get(detail)
+        self.assertIsNone(resp.data["rating_avg"])
+        self.assertEqual(resp.data["reviews_count"], 0)
+        self.assertIsNone(resp.data["my_review"])
+
+        TripReview.objects.create(trip=self.public_trip, user=self.visitor, rating=5, comment="Loved it")
+        TripReview.objects.create(trip=self.public_trip, user=self.outsider, rating=4)
+        TripReview.objects.create(trip=self.public_trip, user=self.member, rating=4)
+
+        resp = self.client.get(detail)
+        self.assertEqual(resp.data["rating_avg"], 4.3)
+        self.assertEqual(resp.data["reviews_count"], 3)
+        self.assertEqual(resp.data["my_review"], {"rating": 5, "comment": "Loved it"})
+
+        resp = self.client.get(reverse("trip-list") + "?is_public=true")
+        by_id = {t["id"]: t for t in resp.data}
+        listed = by_id[str(self.public_trip.id)]
+        self.assertEqual((listed["rating_avg"], listed["reviews_count"]), (4.3, 3))
+        self.assertEqual(listed["my_review"], {"rating": 5, "comment": "Loved it"})
+
+        self.client.force_authenticate(user=None)
+        resp = self.client.get(detail)
+        self.assertEqual((resp.data["rating_avg"], resp.data["reviews_count"]), (4.3, 3))
+        self.assertIsNone(resp.data["my_review"])
+
+        # Owner's list of own trips (joins trip_members) still counts each review once.
+        self.client.force_authenticate(user=self.owner)
+        resp = self.client.get(reverse("trip-list"))
+        by_id = {t["id"]: t for t in resp.data}
+        self.assertEqual(by_id[str(self.public_trip.id)]["reviews_count"], 3)
+        self.assertEqual(by_id[str(self.private_trip.id)]["reviews_count"], 0)
+        self.assertIsNone(by_id[str(self.private_trip.id)]["rating_avg"])

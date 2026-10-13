@@ -5,17 +5,51 @@ from backend.images import delete_replaced_file, process_image
 
 User = get_user_model()
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'bio', 'avatar']
-        read_only_fields = ['id', 'email']
+MAX_INTERESTS = 6
+MAX_INTEREST_LENGTH = 30
 
-class UserDetailSerializer(serializers.ModelSerializer):
+
+def clean_interests(value):
+    """Trim, drop case-insensitive duplicates and bound a list of interest tags."""
+    if not isinstance(value, list):
+        raise serializers.ValidationError('Expected a list of strings.')
+    cleaned, seen = [], set()
+    for item in value:
+        if not isinstance(item, str):
+            raise serializers.ValidationError('Each interest must be a string.')
+        item = item.strip()
+        if not item:
+            raise serializers.ValidationError('Interests cannot be blank.')
+        if len(item) > MAX_INTEREST_LENGTH:
+            raise serializers.ValidationError(f'Each interest must be at most {MAX_INTEREST_LENGTH} characters.')
+        if item.lower() not in seen:
+            seen.add(item.lower())
+            cleaned.append(item)
+    if len(cleaned) > MAX_INTERESTS:
+        raise serializers.ValidationError(f'At most {MAX_INTERESTS} interests are allowed.')
+    return cleaned
+
+
+class ProfileFieldsMixin(serializers.Serializer):
+    """Profile + presence fields shared by the user serializers."""
+    interests = serializers.JSONField(required=False)
+    is_online = serializers.BooleanField(read_only=True)
+
+    def validate_interests(self, value):
+        return clean_interests(value)
+
+
+class UserSerializer(ProfileFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'bio', 'avatar', 'date_joined', 'phone']
-        read_only_fields = ['id', 'email', 'date_joined']
+        fields = ['id', 'email', 'first_name', 'last_name', 'bio', 'avatar', 'location', 'interests', 'last_seen', 'is_online']
+        read_only_fields = ['id', 'email', 'last_seen']
+
+class UserDetailSerializer(ProfileFieldsMixin, serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'bio', 'avatar', 'date_joined', 'phone', 'location', 'interests', 'last_seen', 'is_online']
+        read_only_fields = ['id', 'email', 'date_joined', 'last_seen']
 
     def validate_avatar(self, value):
         return process_image(value, max_side=512) if value else value
@@ -98,3 +132,21 @@ class GoogleAuthSerializer(serializers.Serializer):
         if bool(attrs.get('code')) == bool(attrs.get('credential')):
             raise serializers.ValidationError('Provide either a "code" or a "credential".')
         return attrs
+
+
+class SharedTripSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    title = serializers.CharField()
+    destination = serializers.CharField()
+    start_date = serializers.DateField()
+
+
+class BuddySerializer(UserSerializer):
+    """A user who shares an accepted trip with the requester (see users/services.py)."""
+    trips_count = serializers.IntegerField(read_only=True)
+    mutual_count = serializers.IntegerField(read_only=True)
+    shared_trips = SharedTripSerializer(many=True, read_only=True)
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + ['trips_count', 'mutual_count', 'shared_trips']
+        read_only_fields = fields

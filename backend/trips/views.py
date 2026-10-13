@@ -4,15 +4,15 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
-from django.db.models import Q, Count, Exists, OuterRef, Subquery, Value, BooleanField
+from django.db.models import Q, Avg, Count, Exists, OuterRef, Subquery, Value, BooleanField, CharField, IntegerField, FloatField
 from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_date
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.contrib.auth.tokens import default_token_generator
 
-from .models import Trip, TripStatus, MemberStatus, TripMember, Tag, SavedTrip
-from .serializers import TripSerializer, TripMemberSerializer, TagSerializer, TripCoverSerializer
+from .models import Trip, TripStatus, MemberStatus, TripMember, Tag, SavedTrip, TripReview
+from .serializers import TripSerializer, TripMemberSerializer, TagSerializer, TripCoverSerializer, TripReviewSerializer
 from .permissions import IsTripAccessible, IsMemberAccessible
 from .services import duplicate_trip
 from expenses.models import ExpenseSplit
@@ -32,7 +32,7 @@ class TripViewSet(ModelViewSet):
     serializer_class = TripSerializer
     
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
+        if self.action in ['list', 'retrieve'] or (self.action == 'reviews' and self.request.method == 'GET'):
             permission_classes = [IsTripAccessible]
         else:
             permission_classes = [IsAuthenticated, IsTripAccessible]
@@ -40,7 +40,7 @@ class TripViewSet(ModelViewSet):
 
     def get_queryset(self):
         qs = Trip.objects.select_related('owner').prefetch_related('trip_members__user').all()
-        qs = self._annotate_saves(qs)
+        qs = self._annotate(qs)
         
         if self.action == "list":
             is_public = self.request.query_params.get("is_public")
@@ -82,6 +82,28 @@ class TripViewSet(ModelViewSet):
                 qs = qs.filter(Q(title__icontains=search) | Q(destination__icontains=search) | Q(tags__name__icontains=search)).distinct()
 
         return qs
+
+    def _annotate(self, qs):
+        return self._annotate_reviews(self._annotate_saves(qs))
+
+    def _annotate_reviews(self, qs):
+        """Annotate `rating_avg`, `reviews_count`, `my_rating` and `my_comment` (read by TripSerializer)."""
+        reviews = TripReview.objects.filter(trip=OuterRef('pk')).order_by().values('trip')
+        qs = qs.annotate(
+            rating_avg=Subquery(reviews.annotate(a=Avg('rating')).values('a'), output_field=FloatField()),
+            reviews_count=Coalesce(Subquery(reviews.annotate(c=Count('id')).values('c')), 0),
+        )
+        user = self.request.user
+        if user.is_authenticated:
+            mine = TripReview.objects.filter(trip=OuterRef('pk'), user=user)
+            return qs.annotate(
+                my_rating=Subquery(mine.values('rating')[:1]),
+                my_comment=Subquery(mine.values('comment')[:1]),
+            )
+        return qs.annotate(
+            my_rating=Value(None, output_field=IntegerField()),
+            my_comment=Value(None, output_field=CharField()),
+        )
 
     def _annotate_saves(self, qs):
         """Annotate `saves_count` and `is_saved` (read by TripSerializer) to avoid N+1 queries."""
@@ -125,7 +147,7 @@ class TripViewSet(ModelViewSet):
                 return Response({"start_date": ["Invalid date format, expected YYYY-MM-DD."]}, status=status.HTTP_400_BAD_REQUEST)
 
         trip = duplicate_trip(source, request.user, title=title, start_date=start_date)
-        trip = self._annotate_saves(Trip.objects.filter(pk=trip.pk)).get()
+        trip = self._annotate(Trip.objects.filter(pk=trip.pk)).get()
         return Response(TripSerializer(trip, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post', 'delete'], url_path='bookmark')
@@ -143,6 +165,36 @@ class TripViewSet(ModelViewSet):
             "is_saved": is_saved,
             "saves_count": SavedTrip.objects.filter(trip=trip).count(),
         }, status=response_status)
+
+    @action(detail=True, methods=['get', 'post'], url_path='reviews')
+    def reviews(self, request, pk=None):
+        """List a readable trip's reviews (GET) or upsert the requester's own review (POST)."""
+        trip = self.get_object()
+        if request.method == 'GET':
+            reviews = trip.reviews.select_related('user').order_by('-created_at')
+            return Response(TripReviewSerializer(reviews, many=True, context=self.get_serializer_context()).data)
+
+        if trip.owner_id == request.user.pk:
+            return Response({"detail": "You cannot review your own trip."}, status=status.HTTP_403_FORBIDDEN)
+        is_member = trip.trip_members.filter(user=request.user, status=MemberStatus.ACCEPTED).exists()
+        if not (trip.is_public or is_member):
+            return Response({"detail": "Only members can review a private trip."}, status=status.HTTP_403_FORBIDDEN)
+
+        existing = TripReview.objects.filter(trip=trip, user=request.user).first()
+        serializer = TripReviewSerializer(existing, data=request.data, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        review = serializer.save(trip=trip, user=request.user)
+        return Response(
+            TripReviewSerializer(review, context=self.get_serializer_context()).data,
+            status=status.HTTP_200_OK if existing else status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['delete'], url_path='reviews/mine', url_name='reviews-mine')
+    def my_review(self, request, pk=None):
+        """Delete the requester's review of the trip (idempotent)."""
+        trip = self.get_object()
+        TripReview.objects.filter(trip=trip, user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['put', 'delete'], url_path='cover', parser_classes=[MultiPartParser, FormParser])
     def cover(self, request, pk=None):

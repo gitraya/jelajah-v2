@@ -357,3 +357,251 @@ class AvatarUploadTests(TestCase):
         self.assertEqual(self.upload(image_upload()).status_code, status.HTTP_200_OK)
         self.assertEqual(self.upload(image_upload()).status_code, status.HTTP_429_TOO_MANY_REQUESTS)
         self.assertEqual(self.client.get(self.url).status_code, status.HTTP_200_OK)
+
+
+class ProfileFieldsTests(TestCase):
+    """location / interests / last_seen / is_online on /me/ and /profile/<id>/."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(email="profile@example.com", password="Test12#$", first_name="Pro")
+        self.client.force_authenticate(user=self.user)
+
+    def test_me_exposes_profile_fields(self):
+        response = self.client.get(reverse("user_detail"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for field in ("location", "interests", "last_seen", "is_online"):
+            self.assertIn(field, response.data)
+        self.assertEqual(response.data["interests"], [])
+        self.assertFalse(response.data["is_online"])
+
+    def test_update_location_and_interests_cleans_values(self):
+        response = self.client.patch(reverse("user_detail"), {
+            "location": "Jakarta, ID",
+            "interests": ["  Hiking ", "hiking", "Food", "FOOD", "Diving"],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["interests"], ["Hiking", "Food", "Diving"])
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.location, "Jakarta, ID")
+        self.assertEqual(self.user.interests, ["Hiking", "Food", "Diving"])
+
+    def test_interests_validation(self):
+        invalid = [
+            ["a", "b", "c", "d", "e", "f", "g"],  # more than 6
+            ["x" * 31],                            # too long
+            ["   "],                               # blank after trimming
+            [1, 2],                                # not strings
+            "hiking",                              # not a list
+        ]
+        for value in invalid:
+            response = self.client.patch(reverse("user_detail"), {"interests": value}, format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, value)
+            self.assertIn("interests", response.data)
+        # Six distinct after case-insensitive dedupe is fine.
+        response = self.client.patch(reverse("user_detail"), {
+            "interests": ["a", "b", "c", "d", "e", "f", "A"],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["interests"]), 6)
+
+    def test_last_seen_and_is_online_are_read_only(self):
+        response = self.client.patch(reverse("user_detail"), {
+            "last_seen": "2020-01-01T00:00:00Z", "is_online": True,
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.last_seen)
+
+    def test_profile_view_exposes_fields(self):
+        from django.utils import timezone
+        other = User.objects.create_user(
+            email="other@example.com", password="Test12#$", location="Bali", interests=["Surf"],
+            last_seen=timezone.now(),
+        )
+        response = self.client.get(reverse("user_profile", kwargs={"user_id": other.id}))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["location"], "Bali")
+        self.assertEqual(response.data["interests"], ["Surf"])
+        self.assertTrue(response.data["is_online"])
+        self.assertIsNotNone(response.data["last_seen"])
+
+
+class IsOnlineTests(TestCase):
+    def test_is_online_window(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        user = User.objects.create_user(email="online@example.com", password="x")
+        self.assertFalse(user.is_online)
+        user.last_seen = timezone.now() - timedelta(minutes=1)
+        self.assertTrue(user.is_online)
+        user.last_seen = timezone.now() - timedelta(minutes=4, seconds=50)
+        self.assertTrue(user.is_online)
+        user.last_seen = timezone.now() - timedelta(minutes=6)
+        self.assertFalse(user.is_online)
+
+
+class LastSeenTests(TestCase):
+    """last_seen is recorded by the JWT auth class, at most once per minute."""
+
+    def setUp(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        self.client = APIClient()
+        self.user = User.objects.create_user(email="seen@example.com", password="Test12#$")
+        self.refresh = RefreshToken.for_user(self.user)
+        self.client.cookies[settings.SIMPLE_JWT["AUTH_COOKIE"]] = str(self.refresh.access_token)
+
+    def _last_seen_updates(self, url=None):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get(url or reverse("user_detail"))
+        updates = [q for q in ctx.captured_queries if q["sql"].startswith("UPDATE") and "last_seen" in q["sql"]]
+        return response, len(updates)
+
+    def test_cookie_authenticated_request_records_last_seen(self):
+        response, updates = self._last_seen_updates()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(updates, 1)
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.last_seen)
+        self.assertTrue(response.data["is_online"])
+        self.assertIsNotNone(response.data["last_seen"])
+
+    def test_bearer_header_also_records_last_seen(self):
+        self.client.cookies.clear()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.refresh.access_token}")
+        response, updates = self._last_seen_updates()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(updates, 1)
+
+    def test_writes_are_throttled_to_once_per_minute(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        _, first = self._last_seen_updates()
+        _, second = self._last_seen_updates()
+        self.assertEqual((first, second), (1, 0))
+
+        recent = timezone.now() - timedelta(seconds=30)
+        User.objects.filter(pk=self.user.pk).update(last_seen=recent)
+        _, updates = self._last_seen_updates()
+        self.assertEqual(updates, 0)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.last_seen, recent)
+
+        stale = timezone.now() - timedelta(seconds=61)
+        User.objects.filter(pk=self.user.pk).update(last_seen=stale)
+        _, updates = self._last_seen_updates()
+        self.assertEqual(updates, 1)
+        self.user.refresh_from_db()
+        self.assertGreater(self.user.last_seen, stale)
+
+    def test_unauthenticated_requests_are_unaffected(self):
+        self.client.cookies.clear()
+        response = self.client.get(reverse("trip-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self.client.get(reverse("user_detail"))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.last_seen)
+
+    def test_token_refresh_still_works(self):
+        self.client.cookies.clear()
+        self.client.cookies[settings.SIMPLE_JWT["AUTH_COOKIE_REFRESH"]] = str(self.refresh)
+        response = self.client.post(reverse("token_refresh"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(settings.SIMPLE_JWT["AUTH_COOKIE"], response.cookies)
+
+
+class BuddiesTests(TestCase):
+    """GET /api/auth/buddies/"""
+
+    def setUp(self):
+        from datetime import date, timedelta
+        from django.utils import timezone
+        from trips.models import Trip, TripMember, TripStatus, MemberStatus, MemberRole
+        self.Trip, self.TripMember = Trip, TripMember
+        self.MemberStatus, self.TripStatus = MemberStatus, TripStatus
+        self.dates = {"start_date": date.today() + timedelta(days=3), "end_date": date.today() + timedelta(days=5)}
+
+        self.client = APIClient()
+        self.me = User.objects.create_user(email="me@example.com", password="x", first_name="Me")
+        self.ana = User.objects.create_user(email="ana@example.com", password="x", first_name="Ana")
+        self.zed = User.objects.create_user(
+            email="zed@example.com", password="x", first_name="Zed", last_seen=timezone.now(),
+        )
+        self.pending = User.objects.create_user(email="pending@example.com", password="x", first_name="Pen")
+        self.ghost = User.objects.create_user(email="ghost@example.com", password="x", first_name="Ghost")
+        self.stranger = User.objects.create_user(email="stranger@example.com", password="x")
+
+        # My trip: Ana accepted, Pending only pending.
+        self.trip1 = self.make_trip(self.me, "Bali", members=[self.ana], pending=[self.pending])
+        # Zed's trip (Zed has no TripMember row: owner counts as member); me and Ana accepted.
+        self.trip2 = self.make_trip(self.zed, "Lombok", members=[self.me, self.ana], owner_member=False)
+        # Deleted trip shared with Ghost does not make us buddies.
+        self.make_trip(self.me, "Gone", members=[self.ghost], status=TripStatus.DELETED)
+        # Ana's own cancelled trip and a trip with a stranger.
+        self.make_trip(self.ana, "Cancelled", status=TripStatus.CANCELLED)
+        self.make_trip(self.ana, "Flores", members=[self.stranger])
+
+    def make_trip(self, owner, title, members=(), pending=(), status=None, owner_member=True):
+        from trips.models import MemberRole
+        trip = self.Trip.objects.create(
+            owner=owner, title=title, destination=title, status=status or self.TripStatus.PLANNING, **self.dates,
+        )
+        if owner_member:
+            self.TripMember.objects.create(trip=trip, user=owner, role=MemberRole.ORGANIZER, status=self.MemberStatus.ACCEPTED)
+        for user in members:
+            self.TripMember.objects.create(trip=trip, user=user, status=self.MemberStatus.ACCEPTED)
+        for user in pending:
+            self.TripMember.objects.create(trip=trip, user=user, status=self.MemberStatus.PENDING)
+        return trip
+
+    def get(self):
+        self.client.force_authenticate(user=self.me)
+        response = self.client.get(reverse("buddies"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response
+
+    def test_requires_authentication(self):
+        self.assertEqual(self.client.get(reverse("buddies")).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_lists_buddies_with_counts_sorted_online_first(self):
+        data = self.get().data
+        # Zed is online so comes first despite the name.
+        self.assertEqual([b["email"] for b in data], ["zed@example.com", "ana@example.com"])
+        zed, ana = data
+        self.assertTrue(zed["is_online"])
+        self.assertFalse(ana["is_online"])
+        for field in ("id", "first_name", "last_name", "avatar", "bio", "location", "interests", "last_seen"):
+            self.assertIn(field, ana)
+
+        # Ana: trip1, trip2, Flores (Cancelled excluded).
+        self.assertEqual(ana["trips_count"], 3)
+        self.assertEqual(zed["trips_count"], 1)
+        # Ana and Zed are buddies of each other (trip2) and both mine.
+        self.assertEqual(ana["mutual_count"], 1)
+        self.assertEqual(zed["mutual_count"], 1)
+
+        self.assertEqual({t["title"] for t in ana["shared_trips"]}, {"Bali", "Lombok"})
+        self.assertEqual([t["title"] for t in zed["shared_trips"]], ["Lombok"])
+        self.assertEqual(set(zed["shared_trips"][0]), {"id", "title", "destination", "start_date"})
+
+    def test_no_buddies(self):
+        self.client.force_authenticate(user=self.ghost)
+        response = self.client.get(reverse("buddies"))
+        self.assertEqual(response.data, [])
+
+    def test_query_count_is_bounded(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as ctx:
+            self.get()
+        baseline = len(ctx.captured_queries)
+        for i in range(5):
+            extra = User.objects.create_user(email=f"extra{i}@example.com", password="x")
+            self.make_trip(extra, f"Extra {i}", members=[self.me])
+        with CaptureQueriesContext(connection) as ctx:
+            data = self.get().data
+        self.assertEqual(len(data), 7)
+        self.assertEqual(len(ctx.captured_queries), baseline)

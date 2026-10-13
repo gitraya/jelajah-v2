@@ -28,6 +28,7 @@ urlpatterns = [
     path('api/', include('packing.urls')),
     path('api/', include('checklist.urls')),
     path('api/', include('planner.urls')),
+    path('api/', include('messaging.urls')),
 ]
 
 if settings.DEBUG:

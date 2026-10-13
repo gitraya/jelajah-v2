@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'packing',
     'checklist',
     'planner',
+    'messaging',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'allauth',
@@ -198,7 +199,7 @@ CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'users.authentication.LastSeenJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -215,6 +216,10 @@ REST_FRAMEWORK = {
         "uploads": "20/hour",
         "planner": "20/hour",
         "planner_save": "30/hour",
+        # Direct messages are polled (5 s per open conversation, 30 s for the
+        # unread badge), so they get their own budget outside "user".
+        "messaging": "2000/hour",
+        "messaging_send": "60/min",
     },
 }
 

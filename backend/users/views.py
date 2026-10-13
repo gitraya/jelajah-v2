@@ -8,7 +8,8 @@ from django.db import transaction
 from backend.services import send_templated_email
 from rest_framework.response import Response
 from django.contrib.auth.tokens import default_token_generator
-from .serializers import SetPasswordSerializer, ResendSetPasswordEmailSerializer, GoogleAuthSerializer
+from .serializers import SetPasswordSerializer, ResendSetPasswordEmailSerializer, GoogleAuthSerializer, BuddySerializer
+from .services import get_buddies
 from rest_framework.throttling import ScopedRateThrottle
 
 import logging
@@ -86,7 +87,17 @@ class UserProfileView(generics.RetrieveAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     lookup_field = 'id'
+    lookup_url_kwarg = 'user_id'
     permission_classes = [permissions.IsAuthenticated]
+
+class BuddiesView(generics.ListAPIView):
+    """Users who share at least one trip with the requester as accepted members."""
+    serializer_class = BuddySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        return get_buddies(self.request.user)
 
 class CookieTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):

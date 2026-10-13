@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.text import slugify
 from django.contrib.auth import get_user_model
-from .models import Trip, TripMember, MemberStatus, MemberRole, TripStatus, Tag, SavedTrip
+from .models import Trip, TripMember, MemberStatus, MemberRole, TripStatus, Tag, SavedTrip, TripReview
 from .services import create_trip_for_owner
 from expenses.models import ExpenseSplit, Expense
 from itineraries.models import ItineraryItem, ItineraryStatus
@@ -177,6 +177,9 @@ class TripSerializer(serializers.ModelSerializer):
     user_role = serializers.CharField(read_only=True)
     is_saved = serializers.SerializerMethodField()
     saves_count = serializers.SerializerMethodField()
+    rating_avg = serializers.SerializerMethodField()
+    reviews_count = serializers.SerializerMethodField()
+    my_review = serializers.SerializerMethodField()
 
     class Meta:
         model = Trip
@@ -310,6 +313,30 @@ class TripSerializer(serializers.ModelSerializer):
             return obj.saves_count
         return SavedTrip.objects.filter(trip=obj).count()
 
+    def get_rating_avg(self, obj):
+        # TripViewSet annotates the review fields; fall back to queries elsewhere.
+        if hasattr(obj, 'rating_avg'):
+            avg = obj.rating_avg
+        else:
+            avg = obj.reviews.aggregate(avg=models.Avg('rating'))['avg']
+        return None if avg is None else round(float(avg), 1)
+
+    def get_reviews_count(self, obj):
+        if hasattr(obj, 'reviews_count'):
+            return obj.reviews_count
+        return obj.reviews.count()
+
+    def get_my_review(self, obj):
+        if hasattr(obj, 'my_rating'):
+            if obj.my_rating is None:
+                return None
+            return {'rating': obj.my_rating, 'comment': obj.my_comment}
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return None
+        review = obj.reviews.filter(user=request.user).values('rating', 'comment').first()
+        return review
+
     def get_is_member(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
@@ -356,3 +383,21 @@ class TripCoverSerializer(serializers.ModelSerializer):
 
     def validate_cover_image(self, value):
         return process_image(value, max_side=1600)
+
+
+class ReviewUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'first_name', 'last_name', 'email', 'avatar']
+        read_only_fields = fields
+
+
+class TripReviewSerializer(serializers.ModelSerializer):
+    user = ReviewUserSerializer(read_only=True)
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    comment = serializers.CharField(max_length=1000, allow_blank=True, required=False, default='')
+
+    class Meta:
+        model = TripReview
+        fields = ['id', 'user', 'rating', 'comment', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
