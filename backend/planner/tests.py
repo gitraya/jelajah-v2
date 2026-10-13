@@ -4,7 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import anthropic
+import httpx
 import httpx2
+from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase, override_settings
@@ -93,6 +96,8 @@ class CleanDraftTests(TestCase):
         self.assertEqual(cleaned["days"][1]["date"], (start + timedelta(days=1)).isoformat())
 
 
+# Claude-path tests: pin Gemini off so a real GEMINI_API_KEY in the env never leaks in.
+@override_settings(GEMINI_API_KEY="")
 class PlannerItineraryTests(APITestCase):
     """POST /api/planner/itinerary/"""
 
@@ -212,6 +217,7 @@ class PlannerItineraryTests(APITestCase):
         client_cls.return_value.beta.messages.parse.assert_not_called()
 
 
+@override_settings(GEMINI_API_KEY="")
 class PlannerSaveTests(APITestCase):
     """POST /api/planner/itinerary/save/"""
 
@@ -294,3 +300,138 @@ class PlannerSaveTests(APITestCase):
         resp = self.client.post(self.url, {"draft": draft}, format="json")
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         self.assertEqual(ItineraryItem.objects.get(name="Dotonbori").booking_url, "")
+
+
+def gemini_response(reply="Here's a 2-day Osaka plan, about Rp 210.000 per person.", draft=None,
+                    finish_reason=genai_types.FinishReason.STOP, block_reason=None, text=None):
+    body = text if text is not None else PlannerResponse.model_validate(
+        {"reply": reply, "draft": draft or make_draft()}
+    ).model_dump_json()
+    candidate = SimpleNamespace(finish_reason=finish_reason)
+    return SimpleNamespace(
+        candidates=[candidate],
+        prompt_feedback=SimpleNamespace(block_reason=block_reason) if block_reason else None,
+        text=body,
+    )
+
+
+@override_settings(GEMINI_API_KEY="gemini-key", GEMINI_MODEL="gemini-3.8-flash", ANTHROPIC_API_KEY="", AI_PROVIDER="gemini")
+class GeminiPlannerTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.user = User.objects.create_user(email="gemini@example.com", password="testpass123")
+        self.client.force_authenticate(user=self.user)
+        self.url = reverse("planner-itinerary")
+        self.body = {"messages": [{"role": "user", "content": "3 days of food in Osaka for 2"}], "draft": None}
+
+    @patch("planner.services.genai.Client")
+    def test_happy_path(self, client_cls):
+        generate = client_cls.return_value.models.generate_content
+        generate.return_value = gemini_response()
+        body = {
+            "messages": [
+                {"role": "user", "content": "Osaka trip"},
+                {"role": "assistant", "content": "Here you go!"},
+                {"role": "user", "content": "Make day 2 cheaper"},
+            ],
+            "draft": make_draft(),
+        }
+
+        resp = self.client.post(self.url, body, format="json")
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        self.assertEqual(resp.data["draft"]["title"], "Osaka Foodie")
+        self.assertEqual(resp.data["draft"]["days"][0]["stops"][0]["cost"], 60000)
+        client_cls.assert_called_once_with(api_key="gemini-key")
+        kwargs = generate.call_args.kwargs
+        self.assertEqual(kwargs["model"], "gemini-3.8-flash")
+        self.assertEqual([c.role for c in kwargs["contents"]], ["user", "model", "user"])
+        last = kwargs["contents"][-1].parts[0].text
+        self.assertIn("Current draft:\n```json", last)
+        self.assertIn("Request: Make day 2 cheaper", last)
+        self.assertIn(f"Today's date: {timezone.localdate().isoformat()}", last)
+        config = kwargs["config"]
+        self.assertEqual(config.response_mime_type, "application/json")
+        self.assertEqual(config.response_json_schema, PlannerResponse.model_json_schema())
+        self.assertNotIn(date.today().isoformat(), config.system_instruction)
+
+    @patch("planner.services.genai.Client")
+    def test_blocked_returns_422(self, client_cls):
+        generate = client_cls.return_value.models.generate_content
+        for response in [
+            gemini_response(block_reason="SAFETY", text=""),
+            gemini_response(finish_reason=genai_types.FinishReason.SAFETY, text=""),
+        ]:
+            generate.return_value = response
+            resp = self.client.post(self.url, self.body, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+    @patch("planner.services.genai.Client")
+    def test_upstream_errors_return_502(self, client_cls):
+        generate = client_cls.return_value.models.generate_content
+        cases = [
+            genai_errors.ClientError(429, {"error": {"message": "quota"}}),
+            genai_errors.ServerError(500, {"error": {"message": "boom"}}),
+            httpx.ConnectError("down"),
+        ]
+        details = []
+        for error in cases:
+            generate.side_effect = error
+            resp = self.client.post(self.url, self.body, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_502_BAD_GATEWAY)
+            details.append(resp.data["detail"])
+        self.assertIn("busy", details[0])
+
+    @patch("planner.services.genai.Client")
+    def test_truncated_or_invalid_output_returns_502(self, client_cls):
+        generate = client_cls.return_value.models.generate_content
+        for response in [
+            gemini_response(finish_reason=genai_types.FinishReason.MAX_TOKENS),
+            gemini_response(text='{"reply": "hi"}'),
+            gemini_response(text=""),
+        ]:
+            generate.return_value = response
+            resp = self.client.post(self.url, self.body, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_502_BAD_GATEWAY)
+
+    @override_settings(ANTHROPIC_API_KEY="claude-key")
+    @patch("planner.services.anthropic.Anthropic")
+    @patch("planner.services.genai.Client")
+    def test_falls_back_to_claude_when_gemini_fails(self, gemini_cls, claude_cls):
+        gemini_cls.return_value.models.generate_content.side_effect = genai_errors.ServerError(503, {"error": {"message": "overloaded"}})
+        claude_cls.return_value.beta.messages.parse.return_value = parsed_response(reply="From Claude")
+        resp = self.client.post(self.url, self.body, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        self.assertEqual(resp.data["reply"], "From Claude")
+
+    @override_settings(ANTHROPIC_API_KEY="claude-key")
+    @patch("planner.services.anthropic.Anthropic")
+    @patch("planner.services.genai.Client")
+    def test_block_does_not_fall_back(self, gemini_cls, claude_cls):
+        gemini_cls.return_value.models.generate_content.return_value = gemini_response(block_reason="SAFETY", text="")
+        resp = self.client.post(self.url, self.body, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+        claude_cls.assert_not_called()
+
+    @override_settings(ANTHROPIC_API_KEY="claude-key", AI_PROVIDER="claude")
+    @patch("planner.services.anthropic.Anthropic")
+    @patch("planner.services.genai.Client")
+    def test_ai_provider_claude_uses_claude_first(self, gemini_cls, claude_cls):
+        claude_cls.return_value.beta.messages.parse.return_value = parsed_response(reply="From Claude")
+        resp = self.client.post(self.url, self.body, format="json")
+        self.assertEqual(resp.data["reply"], "From Claude")
+        gemini_cls.assert_not_called()
+
+    @override_settings(GEMINI_API_KEY="", ANTHROPIC_API_KEY="")
+    def test_503_when_no_provider_configured(self):
+        resp = self.client.post(self.url, self.body, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        resp = self.client.post(reverse("planner-save"), {"draft": make_draft()}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    @patch("planner.services.genai.Client")
+    def test_gemini_only_can_save(self, client_cls):
+        resp = self.client.post(reverse("planner-save"), {"draft": make_draft()}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        client_cls.assert_not_called()

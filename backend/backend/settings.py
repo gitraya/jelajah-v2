@@ -345,8 +345,12 @@ LOGGING = {
     },
 }
 
-# AI trip planner (planner app, Claude API). Empty key makes /api/planner/
-# endpoints return 503 instead of calling the API.
+# AI trip planner (planner app). AI_PROVIDER picks the main provider ("gemini"
+# or "claude"); any other provider with a key is used as a fallback when the
+# main one fails upstream. With no key at all, /api/planner/ endpoints return 503.
+AI_PROVIDER = (os.getenv("AI_PROVIDER", "") or "gemini").lower()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "") or "gemini-3.8-flash"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "") or "claude-opus-5-5"
 

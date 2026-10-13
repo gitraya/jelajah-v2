@@ -51,7 +51,10 @@ services:
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
-      # AI trip planner (Claude API). Empty disables /api/planner/ (503).
+      # AI trip planner: Gemini is the main provider, Claude the fallback.
+      # AI_PROVIDER=claude flips the order; no key at all disables /api/planner/ (503).
+      - key: GEMINI_API_KEY
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
 

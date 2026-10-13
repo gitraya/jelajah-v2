@@ -1,4 +1,4 @@
-"""Jelajah AI trip planner: drafting with Claude, cleaning, and saving drafts as trips."""
+"""Jelajah AI trip planner: drafting with Gemini or Claude, cleaning, and saving drafts as trips."""
 import json
 import logging
 import re
@@ -6,8 +6,12 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 import anthropic
+import httpx
 import pydantic
 from django.conf import settings
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import transaction
@@ -55,8 +59,27 @@ class PlannerError(Exception):
         self.detail = detail
 
 
-def is_configured():
+PROVIDERS = ('gemini', 'claude')
+
+
+def _has_key(provider):
+    if provider == 'gemini':
+        return bool(settings.GEMINI_API_KEY)
     return bool(settings.ANTHROPIC_API_KEY)
+
+
+def configured_providers():
+    """Providers with an API key, the preferred one (settings.AI_PROVIDER) first.
+
+    The others act as fallbacks when the preferred provider fails upstream.
+    """
+    preferred = settings.AI_PROVIDER if settings.AI_PROVIDER in PROVIDERS else PROVIDERS[0]
+    ordered = [preferred] + [p for p in PROVIDERS if p != preferred]
+    return [p for p in ordered if _has_key(p)]
+
+
+def is_configured():
+    return bool(configured_providers())
 
 
 def itinerary_type_names():
@@ -99,7 +122,7 @@ def draft_to_json(draft):
 
 
 def build_messages(messages, draft, type_names, today):
-    """Build Claude messages: merge same-role runs and put per-request context in the last user turn."""
+    """Build chat messages (Claude shape): merge same-role runs and put per-request context in the last user turn."""
     merged = []
     for message in messages:
         content = message['content'].strip()
@@ -156,11 +179,95 @@ def call_claude(messages):
     return result
 
 
+# Gemini finish reasons that mean the request was declined, not cut short.
+_GEMINI_BLOCKED = {
+    genai_types.FinishReason.SAFETY,
+    genai_types.FinishReason.PROHIBITED_CONTENT,
+    genai_types.FinishReason.BLOCKLIST,
+    genai_types.FinishReason.SPII,
+    genai_types.FinishReason.RECITATION,
+}
+
+
+def call_gemini(messages):
+    """Ask Gemini for a PlannerResponse; raise PlannerError on a block or upstream failure."""
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    contents = [
+        genai_types.Content(
+            role='model' if message['role'] == 'assistant' else 'user',
+            parts=[genai_types.Part(text=message['content'])],
+        )
+        for message in messages
+    ]
+    try:
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=contents,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                response_mime_type='application/json',
+                response_json_schema=PlannerResponse.model_json_schema(),
+                max_output_tokens=16000,
+            ),
+        )
+    except genai_errors.APIError as exc:
+        if exc.code == 429:
+            logger.warning("Planner: Gemini API rate limited")
+            raise PlannerError(502, "The AI planner is busy right now. Please try again in a moment.")
+        logger.error("Planner: Gemini API error %s: %s", exc.code, exc.message)
+        raise PlannerError(502, "The AI planner is unavailable right now. Please try again later.")
+    except httpx.TransportError:
+        logger.error("Planner: could not reach the Gemini API")
+        raise PlannerError(502, "Could not reach the AI planner. Please try again later.")
+
+    feedback = response.prompt_feedback
+    if feedback is not None and feedback.block_reason:
+        raise PlannerError(422, "The AI planner can't help with that request. Try asking about a trip instead.")
+    candidate = response.candidates[0] if response.candidates else None
+    finish_reason = candidate.finish_reason if candidate else None
+    if finish_reason in _GEMINI_BLOCKED:
+        raise PlannerError(422, "The AI planner can't help with that request. Try asking about a trip instead.")
+
+    text = response.text if candidate else None
+    if not text or finish_reason == genai_types.FinishReason.MAX_TOKENS:
+        logger.error("Planner: no complete Gemini output (finish_reason=%s)", finish_reason)
+        raise PlannerError(502, "The AI planner returned an incomplete plan. Please try a shorter trip or try again.")
+    try:
+        return PlannerResponse.model_validate_json(text)
+    except pydantic.ValidationError:
+        logger.error("Planner: Gemini returned an invalid draft")
+        raise PlannerError(502, "The AI planner returned an invalid plan. Please try again.")
+
+
+_CALLERS = {'gemini': call_gemini, 'claude': call_claude}
+
+
+def call_provider(messages):
+    """Try each configured provider in order; fall back only on upstream (502) failures.
+
+    A 422 means the request itself was declined, so it is returned as-is.
+    """
+    providers = configured_providers()
+    if not providers:
+        raise PlannerError(503, "AI planner is not configured.")
+    last_error = None
+    for index, provider in enumerate(providers):
+        try:
+            return _CALLERS[provider](messages)
+        except PlannerError as exc:
+            if exc.status_code != 502:
+                raise
+            if index + 1 < len(providers):
+                logger.warning("Planner: %s failed, falling back to %s", provider, providers[index + 1])
+            last_error = exc
+    raise last_error
+
+
 def generate(messages, draft):
     """Run one planner turn and return the response body `{reply, draft}`."""
     type_names = itinerary_type_names()
     today = timezone.localdate()
-    result = call_claude(build_messages(messages, draft, type_names, today))
+    result = call_provider(build_messages(messages, draft, type_names, today))
     return {
         'reply': result.reply.strip(),
         'draft': clean_draft(result.draft.model_dump(), type_names, today),

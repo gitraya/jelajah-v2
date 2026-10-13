@@ -1,4 +1,5 @@
-"""Pydantic models for the Claude structured output (`output_format`).
+"""Pydantic models for the planner's structured output (Claude `output_format`,
+Gemini `response_json_schema`).
 
 Kept deliberately simple (no min/max, no regex): structured outputs do not
 support every JSON-schema keyword. Values are cleaned after parsing in
