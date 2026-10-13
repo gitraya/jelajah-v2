@@ -1,6 +1,23 @@
 import { useMemo, useState } from "react";
-import { AlertCircle, CheckCircle, Clock, ExternalLink, Plus } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  ExternalLink,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/app/components/ui/dropdown-menu";
+import { useIsMobile } from "@/app/components/ui/use-mobile";
 import {
   Select,
   SelectContent,
@@ -38,6 +55,7 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [deleting, setDeleting] = useState<any>(null);
+  const isMobile = useIsMobile();
 
   const typeName = (item: any) => item.type?.name || "Other";
 
@@ -77,7 +95,7 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
     <div>
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <Select value={selectedType} onValueChange={setSelectedType}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-[calc(50%-0.375rem)] md:w-40">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
@@ -90,7 +108,7 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
         </Select>
 
         <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-[calc(50%-0.375rem)] md:w-40">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -139,6 +157,44 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
             ) : undefined
           }
         />
+      ) : isMobile ? (
+        <div className="space-y-4">
+          {days.map((day) => (
+            <div key={day.key}>
+              <div
+                className={`inline-flex items-center rounded-full px-3 py-1.5 mb-2 ${
+                  day.date === "Unscheduled"
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-primary text-white"
+                }`}
+                style={{ fontSize: 12, fontWeight: 700 }}
+              >
+                {day.date === "Unscheduled"
+                  ? "Unscheduled"
+                  : `Day ${day.num} · ${new Date(day.items[0]?.visit_time).toLocaleDateString(
+                      "en-GB",
+                      { weekday: "short", day: "numeric", month: "short" }
+                    )}`}
+              </div>
+              <div className="space-y-2">
+                {day.items.map((stop: any) => (
+                  <MobileStopCard
+                    key={stop.id}
+                    stop={stop}
+                    typeName={typeName(stop)}
+                    canEdit={canEdit}
+                    onEdit={() => {
+                      setEditing(stop);
+                      setFormOpen(true);
+                    }}
+                    onDelete={() => setDeleting(stop)}
+                    onStatus={(next) => updateStatus(stop.id, next)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-6">
           {days.map((day) => (
@@ -280,5 +336,122 @@ export function ItineraryTab({ canEdit }: { canEdit: boolean }) {
         onConfirm={() => deleteLocation(deleting.id)}
       />
     </div>
+  );
+}
+
+/**
+ * Compact mobile stop row (icon, name, type + "Linked" pill, price). For
+ * editors, tapping it opens the edit / status / delete actions.
+ */
+function MobileStopCard({
+  stop,
+  typeName,
+  canEdit,
+  onEdit,
+  onDelete,
+  onStatus,
+}: {
+  stop: any;
+  typeName: string;
+  canEdit: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onStatus: (status: string) => void;
+}) {
+  const si = statusIcon[stop.status] || statusIcon.PLANNED;
+  const SIcon = si.icon;
+  const price = stopPrice(stop.cost, true);
+  const time = stop.visit_time
+    ? new Date(stop.visit_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+
+  const body = (
+    <>
+      <span className="shrink-0" style={{ fontSize: 17 }}>
+        {stopIcon(typeName)}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="truncate" style={{ fontSize: 12, fontWeight: 600, color: "#16213E" }}>
+          {stop.name}
+        </p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <SIcon className="w-3 h-3 shrink-0" style={{ color: si.color }} aria-label={stop.status} />
+          <span className="text-muted-foreground truncate" style={{ fontSize: 10 }}>
+            {[time, typeName].filter(Boolean).join(" · ")}
+          </span>
+          {stop.booking_url ? (
+            <span className="inline-flex items-center gap-0.5 bg-secondary rounded-full px-1.5 py-0.5 shrink-0">
+              <ExternalLink className="w-2 h-2 text-secondary-foreground" />
+              <span style={{ fontSize: 9, fontWeight: 600, color: "#0B6B3A" }}>Linked</span>
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {price ? (
+        <span
+          className="shrink-0"
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            color: price.free ? "#16B364" : "#16213E",
+          }}
+        >
+          {price.label}
+        </span>
+      ) : null}
+    </>
+  );
+  const cls =
+    "w-full text-left bg-card border border-border rounded-xl px-3 py-2.5 flex items-center gap-2";
+
+  if (!canEdit) {
+    return stop.booking_url ? (
+      <a href={stop.booking_url} target="_blank" rel="noopener noreferrer" className={cls}>
+        {body}
+      </a>
+    ) : (
+      <div className={cls}>{body}</div>
+    );
+  }
+
+  return (
+    // Non-modal so the dialogs opened from it get focus cleanly.
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={`${cls} active:border-primary/40`} aria-label={`${stop.name} actions`}>
+          {body}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="rounded-xl min-w-[200px]">
+        <DropdownMenuLabel className="truncate max-w-[240px]">{stop.name}</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={onEdit}>
+          <Pencil className="w-4 h-4" /> Edit stop
+        </DropdownMenuItem>
+        {stop.booking_url ? (
+          <DropdownMenuItem asChild>
+            <a href={stop.booking_url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="w-4 h-4" /> Open booking link
+            </a>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+        {Object.entries(ITINERARY_STATUSES)
+          .filter(([value]) => value !== stop.status)
+          .map(([value, label]) => {
+            const Icon = (statusIcon[value] || statusIcon.PLANNED).icon;
+            return (
+              <DropdownMenuItem key={value} onSelect={() => onStatus(value)}>
+                <Icon className="w-4 h-4" style={{ color: statusIcon[value]?.color }} />
+                Mark as {String(label).toLowerCase()}
+              </DropdownMenuItem>
+            );
+          })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+          <Trash2 className="w-4 h-4" /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

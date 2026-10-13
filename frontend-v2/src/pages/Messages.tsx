@@ -98,10 +98,10 @@ export default function Messages() {
           selectedId && "hidden md:flex"
         )}
       >
-        <div className="px-4 pt-5 pb-3 md:px-5 shrink-0">
+        <div className="px-4 pt-3 pb-3 md:px-5 md:pt-5 shrink-0">
           <h1
-            className="text-foreground mb-3"
-            style={{ fontWeight: 800, fontSize: 26, letterSpacing: "-0.03em" }}
+            className="text-foreground mb-3 text-[24px] md:text-[26px]"
+            style={{ fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.25 }}
           >
             Messages
           </h1>

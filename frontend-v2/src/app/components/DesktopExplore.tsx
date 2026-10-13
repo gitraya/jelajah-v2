@@ -128,15 +128,15 @@ export function DesktopExplore() {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
-      <div className="flex items-start justify-between mb-6">
-        <div>
+      <div className="flex items-start justify-between mb-5 md:mb-6">
+        <div className="min-w-0">
           <h1
-            className="text-foreground mb-1"
-            style={{ fontWeight: 800, fontSize: 30, letterSpacing: "-0.03em" }}
+            className="text-foreground mb-1 text-[24px] md:text-[30px]"
+            style={{ fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.25 }}
           >
             Explore <span className="text-primary">trips</span>
           </h1>
-          <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+          <p className="text-muted-foreground text-[13px] md:text-[14px]">
             Browse public trips shared by the community
           </p>
         </div>
@@ -153,7 +153,7 @@ export function DesktopExplore() {
         />
       </div>
 
-      <div className="flex gap-2 flex-wrap mb-7">
+      <div className="flex gap-2 flex-wrap mb-5 md:mb-7">
         {categories.map((c) => (
           <button
             key={c}
@@ -192,7 +192,7 @@ export function DesktopExplore() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 mb-10">
           {filtered.map((dest: any) => (
             <div
               key={dest.id}
@@ -347,7 +347,7 @@ export function DesktopExplore() {
             No community itineraries yet — make one of your trips public to share it.
           </p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {templates.map((tpl: any) => (
               <div
                 key={tpl.id}

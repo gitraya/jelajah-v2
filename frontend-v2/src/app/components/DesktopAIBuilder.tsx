@@ -27,6 +27,7 @@ import {
   stopPrice,
 } from "@/lib/adapters";
 import { getErrorMessage } from "@/lib/utils";
+import { useIsMobile } from "./ui/use-mobile";
 
 interface Props {
   /** The prompt from Plan home; empty shows a "where to?" prompt instead. */
@@ -105,6 +106,9 @@ export function DesktopAIBuilder({ initialQuery, onSave }: Props) {
   const [input, setInput] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** Mobile only: the chat (with inline draft) or the full editable canvas. */
+  const [mobileView, setMobileView] = useState<"chat" | "itinerary">("chat");
+  const isMobile = useIsMobile();
   const startedRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -167,7 +171,7 @@ export function DesktopAIBuilder({ initialQuery, onSave }: Props) {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, pending, loading]);
+  }, [messages.length, pending, loading, mobileView]);
 
   const send = (event?: FormEvent) => {
     event?.preventDefault();
@@ -270,6 +274,370 @@ export function DesktopAIBuilder({ initialQuery, onSave }: Props) {
     : loading
     ? "Jelajah AI is drafting your itinerary…"
     : "Describe your trip and Jelajah AI will draft it";
+
+  const unconfiguredBanner =
+    status === "unconfigured" ? (
+      <div className="mx-4 md:mx-8 mt-6 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-amber-900 flex flex-col sm:flex-row sm:items-center gap-3">
+        <AlertTriangle className="w-5 h-5 shrink-0" />
+        <div className="flex-1">
+          <p style={{ fontWeight: 700, fontSize: 14 }}>
+            AI planner isn't configured on this server
+          </p>
+          <p style={{ fontSize: 13 }}>
+            You can still create the trip yourself and add stops from the trip page.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={startManualPlanning}
+          className="bg-primary text-white rounded-xl px-4 py-2 hover:bg-[#13a058] transition-colors shrink-0"
+          style={{ fontSize: 13, fontWeight: 600 }}
+        >
+          Create trip manually
+        </button>
+      </div>
+    ) : null;
+
+  const canvasContent =
+    draft ? (
+      <>
+        {/* Summary strip */}
+        <div className="mx-4 md:mx-8 mt-6 bg-secondary rounded-2xl px-4 md:px-6 py-4 grid grid-cols-2 xl:grid-cols-4 gap-4">
+          {[
+            { label: "Days", value: (draft.days || []).length },
+            { label: "Stops", value: stopsOf(draft) },
+            { label: "Per person", value: formatRpShort(perPerson) },
+            { label: "Group total", value: formatRpShort(perPerson * travelers) },
+          ].map((s) => (
+            <div key={s.label}>
+              <p
+                className="text-secondary-foreground"
+                style={{ fontWeight: 800, fontSize: 22, letterSpacing: "-0.03em" }}
+              >
+                {s.value}
+              </p>
+              <p
+                className="text-secondary-foreground/70"
+                style={{ fontSize: 12, fontWeight: 500 }}
+              >
+                {s.label}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Itinerary */}
+        <div className={`px-4 md:px-8 py-6 space-y-7 ${loading ? "opacity-60" : ""}`}>
+          {(draft.days || []).map((day, dayIdx) => (
+            <section key={`${day.day}-${dayIdx}`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shrink-0">
+                  <span className="text-white" style={{ fontWeight: 800, fontSize: 14 }}>
+                    {day.day || dayIdx + 1}
+                  </span>
+                </div>
+                <div>
+                  <h2 className="text-foreground" style={{ fontWeight: 700, fontSize: 15 }}>
+                    {day.title || `Day ${day.day || dayIdx + 1}`}
+                  </h2>
+                  <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {formatDayLabel(day.date)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 ml-0 sm:ml-11">
+                {(day.stops || []).map((stop, stopIdx) => (
+                  <StopCard
+                    key={stopIdx}
+                    stop={stop}
+                    editing={editMode}
+                    onChange={(patch) => updateStop(dayIdx, stopIdx, patch)}
+                    onRemove={() => removeStop(dayIdx, stopIdx)}
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={() => addStop(dayIdx)}
+                  className="w-full border-2 border-dashed border-border rounded-xl py-2.5 text-muted-foreground hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-1.5"
+                  style={{ fontSize: 13 }}
+                >
+                  <Plus className="w-4 h-4" />
+                  Add a stop to day {day.day || dayIdx + 1}
+                </button>
+              </div>
+            </section>
+          ))}
+        </div>
+      </>
+    ) : loading ? (
+      <CanvasSkeleton />
+    ) : status !== "unconfigured" ? (
+      <div className="px-4 md:px-8 py-16 flex flex-col items-center text-center">
+        <div className="w-16 h-16 bg-secondary rounded-2xl flex items-center justify-center mb-4 text-3xl">
+          🗺️
+        </div>
+        <p className="text-foreground mb-2" style={{ fontWeight: 700, fontSize: 18 }}>
+          Where do you want to go?
+        </p>
+        <p className="text-muted-foreground mb-5 max-w-md" style={{ fontSize: 14 }}>
+          Tell Jelajah AI your destination, dates, and travel crew in the chat —
+          or start with one of these.
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => ask(s)}
+              className="bg-card border border-border rounded-full px-3.5 py-1.5 hover:border-primary hover:bg-secondary transition-all text-foreground"
+              style={{ fontSize: 13, fontWeight: 500 }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : null;
+
+  const statusTone = status === "unconfigured" || status === "error";
+  const statusLabel = loading
+    ? "Building your trip"
+    : status === "unconfigured"
+    ? "Unavailable"
+    : status === "error"
+    ? "Something went wrong"
+    : draft
+    ? "Draft ready"
+    : "Ready to plan";
+
+  const tripForm = (
+    <TripFormModal
+      open={formOpen}
+      onOpenChange={setFormOpen}
+      onSave={createTrip}
+      onCoverUpload={uploadTripCover}
+      onCoverRemove={removeTripCover}
+      onSaved={onSave}
+    />
+  );
+
+  if (isMobile) {
+    const lastAiIdx = messages.map((m) => m.role).lastIndexOf("assistant");
+    const inlineDraft = draft ? (
+      <div className={`space-y-3 ${loading ? "opacity-60" : ""}`}>
+        {(draft.days || []).map((day, dayIdx) => (
+          <div key={`${day.day}-${dayIdx}`} className="space-y-1.5">
+            <div
+              className="inline-flex items-center bg-primary text-white rounded-full px-3 py-1"
+              style={{ fontSize: 11, fontWeight: 700 }}
+            >
+              Day {day.day || dayIdx + 1}
+              {formatDayLabel(day.date) ? ` · ${formatDayLabel(day.date)}` : ""}
+            </div>
+            {(day.stops || []).map((stop, stopIdx) => (
+              <MiniStopCard key={stopIdx} stop={stop} />
+            ))}
+          </div>
+        ))}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setMobileView("itinerary")}
+            className="flex-1 bg-card border border-border rounded-xl py-2 text-foreground flex items-center justify-center gap-1.5"
+            style={{ fontSize: 12, fontWeight: 600 }}
+          >
+            View full itinerary
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditMode(true);
+              setMobileView("itinerary");
+            }}
+            className="bg-secondary text-secondary-foreground rounded-xl px-3 py-2 flex items-center gap-1.5"
+            style={{ fontSize: 12, fontWeight: 600 }}
+          >
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </button>
+        </div>
+      </div>
+    ) : null;
+
+    return (
+      <div className="flex-1 min-h-0 flex flex-col bg-background">
+        {/* Header */}
+        <div
+          className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0"
+        >
+          <button
+            type="button"
+            onClick={() =>
+              mobileView === "itinerary" ? setMobileView("chat") : navigate(-1)
+            }
+            aria-label={mobileView === "itinerary" ? "Back to chat" : "Go back"}
+            className="w-8 h-8 bg-muted rounded-xl flex items-center justify-center shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4 text-foreground" />
+          </button>
+          <div className="w-6 h-6 bg-primary rounded-lg flex items-center justify-center shrink-0">
+            <Sparkles className="w-3 h-3 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="truncate" style={{ fontWeight: 700, fontSize: 13, color: "#16213E" }}>
+              {mobileView === "itinerary" ? headerTitle : "Jelajah AI"}
+            </p>
+            <div className="flex items-center gap-1">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${statusTone ? "bg-amber-500" : "bg-primary"} ${
+                  loading ? "animate-pulse" : ""
+                }`}
+              />
+              <span
+                className={`truncate ${statusTone ? "text-amber-700" : "text-primary"}`}
+                style={{ fontSize: 10, fontWeight: 500 }}
+              >
+                {statusLabel}
+              </span>
+            </div>
+          </div>
+          {draft && mobileView === "itinerary" && (
+            <button
+              type="button"
+              onClick={() => setEditMode((v) => !v)}
+              aria-pressed={editMode}
+              className={`border rounded-xl px-2.5 py-1.5 flex items-center gap-1 shrink-0 ${
+                editMode
+                  ? "border-primary bg-secondary text-secondary-foreground"
+                  : "border-border bg-card text-foreground"
+              }`}
+              style={{ fontSize: 12, fontWeight: 600 }}
+            >
+              {editMode ? <Check className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+              {editMode ? "Done" : "Edit"}
+            </button>
+          )}
+        </div>
+
+        {/* Body */}
+        {mobileView === "itinerary" ? (
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <p className="px-4 pt-3 text-muted-foreground" style={{ fontSize: 12 }}>
+              {headerSub}
+            </p>
+            {unconfiguredBanner}
+            {canvasContent}
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2">
+            {messages.length === 0 && !pending && (
+              <MobileBubble role="assistant">
+                Hi! Where do you want to go? Tell me the destination, dates, and who's
+                coming — I'll draft a day-by-day itinerary with prices in IDR.
+              </MobileBubble>
+            )}
+
+            {messages.map((m, i) => (
+              <div key={i} className="space-y-2">
+                <MobileBubble role={m.role}>{m.content}</MobileBubble>
+                {i === lastAiIdx && inlineDraft}
+              </div>
+            ))}
+
+            {pending && <MobileBubble role="user">{pending}</MobileBubble>}
+
+            {loading && (
+              <div className="flex items-center gap-1.5 px-1 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+                <span className="text-muted-foreground ml-1" style={{ fontSize: 11 }}>
+                  Finding options…
+                </span>
+              </div>
+            )}
+
+            {status === "error" && pending && (
+              <div
+                className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive"
+                style={{ fontSize: 12, lineHeight: 1.5 }}
+                role="alert"
+              >
+                <p className="mb-1.5">{errorMsg || "That didn't work."}</p>
+                <button
+                  type="button"
+                  onClick={retry}
+                  className="inline-flex items-center gap-1 rounded-lg bg-card border border-border px-2.5 py-1 text-foreground"
+                  style={{ fontSize: 11, fontWeight: 600 }}
+                >
+                  <RotateCcw className="w-3 h-3" /> Try again
+                </button>
+              </div>
+            )}
+
+            {status === "unconfigured" && <div className="-mx-3 -mt-3">{unconfiguredBanner}</div>}
+
+            {!draft && !loading && !pending && messages.length === 0 && status !== "unconfigured" && (
+              <div className="flex flex-col items-start gap-1.5 pt-1">
+                {suggestions.map((sug) => (
+                  <button
+                    key={sug}
+                    type="button"
+                    onClick={() => ask(sug)}
+                    className="bg-secondary text-secondary-foreground rounded-full px-3 py-1.5 text-left"
+                    style={{ fontSize: 11, fontWeight: 600 }}
+                  >
+                    {sug}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+        )}
+
+        {/* Bottom bar: chat input + save */}
+        <div
+          className="px-3 pt-3 border-t border-border space-y-2 bg-card shrink-0"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          <form onSubmit={send} className="flex items-center gap-2 bg-muted rounded-xl pl-3 pr-1.5 py-1.5">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={status === "unconfigured"}
+              placeholder={draft ? "Add a beach day…" : "5 days Osaka, food, 4 friends…"}
+              aria-label="Message Jelajah AI"
+              className="flex-1 min-w-0 bg-transparent border-none outline-none py-1 text-foreground placeholder-muted-foreground disabled:opacity-50"
+              style={{ fontSize: 13 }}
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || loading || status === "unconfigured"}
+              aria-label="Send message"
+              className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shrink-0 disabled:opacity-40"
+            >
+              <Send className="w-3.5 h-3.5 text-white" />
+            </button>
+          </form>
+          {draft && (
+            <button
+              type="button"
+              onClick={saveTrip}
+              disabled={saving || loading}
+              className="w-full bg-primary text-white rounded-2xl py-2.5 flex items-center justify-center gap-2 disabled:opacity-60"
+              style={{ fontSize: 13, fontWeight: 700 }}
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {saving ? "Saving…" : "Save this trip"}
+            </button>
+          )}
+        </div>
+
+        {tripForm}
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
@@ -439,138 +807,68 @@ export function DesktopAIBuilder({ initialQuery, onSave }: Props) {
           )}
         </div>
 
-        {status === "unconfigured" ? (
-          <div className="mx-4 md:mx-8 mt-6 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-amber-900 flex flex-col sm:flex-row sm:items-center gap-3">
-            <AlertTriangle className="w-5 h-5 shrink-0" />
-            <div className="flex-1">
-              <p style={{ fontWeight: 700, fontSize: 14 }}>
-                AI planner isn't configured on this server
-              </p>
-              <p style={{ fontSize: 13 }}>
-                You can still create the trip yourself and add stops from the trip page.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={startManualPlanning}
-              className="bg-primary text-white rounded-xl px-4 py-2 hover:bg-[#13a058] transition-colors shrink-0"
-              style={{ fontSize: 13, fontWeight: 600 }}
-            >
-              Create trip manually
-            </button>
-          </div>
-        ) : null}
+        {unconfiguredBanner}
 
-        {draft ? (
-          <>
-            {/* Summary strip */}
-            <div className="mx-4 md:mx-8 mt-6 bg-secondary rounded-2xl px-4 md:px-6 py-4 grid grid-cols-2 xl:grid-cols-4 gap-4">
-              {[
-                { label: "Days", value: (draft.days || []).length },
-                { label: "Stops", value: stopsOf(draft) },
-                { label: "Per person", value: formatRpShort(perPerson) },
-                { label: "Group total", value: formatRpShort(perPerson * travelers) },
-              ].map((s) => (
-                <div key={s.label}>
-                  <p
-                    className="text-secondary-foreground"
-                    style={{ fontWeight: 800, fontSize: 22, letterSpacing: "-0.03em" }}
-                  >
-                    {s.value}
-                  </p>
-                  <p
-                    className="text-secondary-foreground/70"
-                    style={{ fontSize: 12, fontWeight: 500 }}
-                  >
-                    {s.label}
-                  </p>
-                </div>
-              ))}
-            </div>
 
-            {/* Itinerary */}
-            <div className={`px-4 md:px-8 py-6 space-y-7 ${loading ? "opacity-60" : ""}`}>
-              {(draft.days || []).map((day, dayIdx) => (
-                <section key={`${day.day}-${dayIdx}`}>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shrink-0">
-                      <span className="text-white" style={{ fontWeight: 800, fontSize: 14 }}>
-                        {day.day || dayIdx + 1}
-                      </span>
-                    </div>
-                    <div>
-                      <h2 className="text-foreground" style={{ fontWeight: 700, fontSize: 15 }}>
-                        {day.title || `Day ${day.day || dayIdx + 1}`}
-                      </h2>
-                      <p className="text-muted-foreground" style={{ fontSize: 12 }}>
-                        {formatDayLabel(day.date)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 ml-0 sm:ml-11">
-                    {(day.stops || []).map((stop, stopIdx) => (
-                      <StopCard
-                        key={stopIdx}
-                        stop={stop}
-                        editing={editMode}
-                        onChange={(patch) => updateStop(dayIdx, stopIdx, patch)}
-                        onRemove={() => removeStop(dayIdx, stopIdx)}
-                      />
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => addStop(dayIdx)}
-                      className="w-full border-2 border-dashed border-border rounded-xl py-2.5 text-muted-foreground hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-1.5"
-                      style={{ fontSize: 13 }}
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add a stop to day {day.day || dayIdx + 1}
-                    </button>
-                  </div>
-                </section>
-              ))}
-            </div>
-          </>
-        ) : loading ? (
-          <CanvasSkeleton />
-        ) : status !== "unconfigured" ? (
-          <div className="px-4 md:px-8 py-16 flex flex-col items-center text-center">
-            <div className="w-16 h-16 bg-secondary rounded-2xl flex items-center justify-center mb-4 text-3xl">
-              🗺️
-            </div>
-            <p className="text-foreground mb-2" style={{ fontWeight: 700, fontSize: 18 }}>
-              Where do you want to go?
-            </p>
-            <p className="text-muted-foreground mb-5 max-w-md" style={{ fontSize: 14 }}>
-              Tell Jelajah AI your destination, dates, and travel crew in the chat —
-              or start with one of these.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => ask(s)}
-                  className="bg-card border border-border rounded-full px-3.5 py-1.5 hover:border-primary hover:bg-secondary transition-all text-foreground"
-                  style={{ fontSize: 13, fontWeight: 500 }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        {canvasContent}
       </main>
 
-      <TripFormModal
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        onSave={createTrip}
-        onCoverUpload={uploadTripCover}
-        onCoverRemove={removeTripCover}
-        onSaved={onSave}
-      />
+      {tripForm}
+    </div>
+  );
+}
+
+/** Mobile chat bubble, per the reference AI chat screen. */
+function MobileBubble({ role, children }: { role: "user" | "assistant"; children: ReactNode }) {
+  const user = role === "user";
+  return (
+    <div className={`flex ${user ? "justify-end" : "justify-start"}`}>
+      <div
+        className="max-w-[85%] px-3 py-2 whitespace-pre-wrap"
+        style={{
+          fontSize: 12,
+          lineHeight: 1.5,
+          background: user ? "#16B364" : "#F4F8F5",
+          color: user ? "#fff" : "#16213E",
+          borderRadius: user ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Compact read-only draft stop shown inline in the mobile chat. */
+function MiniStopCard({ stop }: { stop: DraftStop }) {
+  const price = stopPrice(stop.cost, true);
+  return (
+    <div className="bg-card border border-border rounded-xl px-3 py-2 flex items-center gap-2">
+      <span className="shrink-0" style={{ fontSize: 16 }}>{stopIcon(stop.type)}</span>
+      <div className="flex-1 min-w-0">
+        <p className="truncate" style={{ fontSize: 11, fontWeight: 600, color: "#16213E" }}>
+          {stop.name || "Untitled stop"}
+        </p>
+        {stop.booking_url && (
+          <a
+            href={stop.booking_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-0.5 bg-secondary rounded-full px-1.5 py-0.5"
+          >
+            <ExternalLink className="w-2 h-2 text-secondary-foreground" />
+            <span style={{ fontSize: 9, fontWeight: 600, color: "#0B6B3A" }}>Booking link added</span>
+          </a>
+        )}
+      </div>
+      {price && (
+        <span
+          className="shrink-0"
+          style={{ fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", color: price.free ? "#16B364" : "#16213E" }}
+        >
+          {price.label}
+        </span>
+      )}
     </div>
   );
 }

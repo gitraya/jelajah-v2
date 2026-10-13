@@ -6,6 +6,7 @@ import {
   ImageUp,
   Loader2,
   MapPin,
+  MoreHorizontal,
   Pencil,
   Star,
   Trash2,
@@ -29,14 +30,25 @@ import { ReviewsTab } from "@/components/trip/ReviewsTab";
 import { TravelersTab } from "@/components/trip/TravelersTab";
 import { UserAvatar } from "@/components/UserAvatar";
 import { TripFormModal } from "@/components/modals/TripFormModal";
+import { useChecklist } from "@/contexts/ChecklistContext";
 import { useExpenses } from "@/contexts/ExpensesContext";
+import { useItineraries } from "@/contexts/ItinerariesContext";
 import { useMembers } from "@/contexts/MembersContext";
 import { useTrip } from "@/contexts/TripContext";
-import { coverImage, formatRating, formatRp, reviewsLabel } from "@/lib/adapters";
+import {
+  coverImage,
+  formatDateRange,
+  formatRating,
+  formatRp,
+  formatRpShort,
+  reviewsLabel,
+  tripDays,
+} from "@/lib/adapters";
 import { getTripDifficultyColor, getTripStatusColor } from "@/lib/colors";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 import { useImagePicker } from "@/hooks/useImagePicker";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useIsMobile } from "./ui/use-mobile";
 
 interface Props {
   tripId: string;
@@ -63,6 +75,9 @@ export function DesktopTripDetail({ onBack }: Props) {
     useTrip();
   const { members } = useMembers();
   const { statistics: expenseStats } = useExpenses();
+  const { statistics: checklistStats } = useChecklist();
+  const { statistics: itineraryStats, locations } = useItineraries();
+  const isMobile = useIsMobile();
 
   // `is_editable` is computed server-side from ownership + role, so trust it
   // rather than re-deriving permissions in the client.
@@ -93,6 +108,15 @@ export function DesktopTripDetail({ onBack }: Props) {
   const spentPct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
   const travelerCount = members?.length || trip?.members_count || 0;
 
+  // Mobile "Ready": checklist completion, else share of visited stops.
+  const checklistTotal = Number(checklistStats?.total_items || 0);
+  const stopsTotal = Number(itineraryStats?.total ?? locations?.length ?? 0);
+  const readyPct = checklistTotal
+    ? Math.round((Number(checklistStats?.completed_items || 0) / checklistTotal) * 100)
+    : stopsTotal
+    ? Math.round((Number(itineraryStats?.visited || 0) / stopsTotal) * 100)
+    : 0;
+
   if (isLoading && !trip) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -114,8 +138,139 @@ export function DesktopTripDetail({ onBack }: Props) {
     );
   }
 
+  const dateText =
+    trip.dates || formatDateRange(trip.start_date, trip.end_date) || formatDate(trip.start_date);
+  const days = tripDays(trip);
+
+  const mobileTop = (
+    <>
+      {coverPicker.input}
+      {/* Header: back, title, more actions */}
+      <div className="flex items-center gap-3 px-4 py-2">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to trips"
+          className="w-8 h-8 bg-muted rounded-xl flex items-center justify-center shrink-0"
+        >
+          <ArrowLeft className="w-4 h-4 text-foreground" />
+        </button>
+        <p
+          className="flex-1 min-w-0 text-center truncate"
+          style={{ fontWeight: 700, fontSize: 15, color: "#16213E" }}
+        >
+          {trip.title}
+        </p>
+        {canEdit ? (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild disabled={coverBusy}>
+              <button
+                type="button"
+                aria-label="Trip actions"
+                className="w-8 h-8 bg-muted rounded-xl flex items-center justify-center shrink-0 disabled:opacity-60"
+              >
+                {coverBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-foreground" />
+                ) : (
+                  <MoreHorizontal className="w-4 h-4 text-foreground" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-xl">
+              <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+                <Pencil className="w-4 h-4" /> Edit trip
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={coverPicker.open}>
+                <ImageUp className="w-4 h-4" />
+                {trip.cover_image ? "Upload new cover" : "Add cover"}
+              </DropdownMenuItem>
+              {trip.cover_image ? (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => runCoverAction(removeCover, "Cover removed")}
+                >
+                  <Trash2 className="w-4 h-4" /> Remove cover
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="w-8 h-8 shrink-0" />
+        )}
+      </div>
+
+      {/* Cover card */}
+      <div className="mx-4 relative rounded-2xl overflow-hidden h-40 mb-3 bg-[#1a3a5c]">
+        <ImageWithFallback
+          key={coverImage(trip)}
+          src={coverImage(trip)}
+          alt={trip.title}
+          className="w-full h-full object-cover opacity-85"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
+        <div
+          className="absolute top-3 left-3 max-w-[calc(100%-1.5rem)] truncate bg-white/90 rounded-full px-2 py-1"
+          style={{ fontSize: 11, fontWeight: 600, color: "#16213E" }}
+        >
+          🧭 {trip.destination}
+        </div>
+        <div className="absolute bottom-3 left-3 right-20 min-w-0">
+          <p className="text-white truncate" style={{ fontWeight: 700, fontSize: 15 }}>
+            {days ? `${days} ${days === 1 ? "day" : "days"} in ${trip.destination}` : trip.destination}
+          </p>
+          <p className="text-white/80 truncate" style={{ fontSize: 11 }}>
+            {[dateText, `${travelerCount} ${travelerCount === 1 ? "traveler" : "travelers"}`]
+              .filter(Boolean)
+              .join(" · ")}
+            {rating ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab("reviews")}
+                className="inline-flex items-center gap-0.5 ml-1"
+              >
+                · <Star className="w-3 h-3" style={{ color: "#FF8A4C" }} fill="#FF8A4C" />
+                <span className="text-white" style={{ fontWeight: 700 }}>{rating}</span>
+              </button>
+            ) : null}
+          </p>
+        </div>
+        <div className="absolute bottom-3 right-3 flex -space-x-1.5">
+          {(members || []).slice(0, 3).map((m: any) => (
+            <UserAvatar
+              key={m.id}
+              person={m}
+              className="w-6 h-6 rounded-full border-2 border-white"
+              style={{ fontSize: 8 }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Stat tiles */}
+      <div className="mx-4 grid grid-cols-3 gap-2">
+        {[
+          { icon: "✅", value: `${readyPct}%`, label: "Ready" },
+          { icon: "💳", value: formatRpShort(spent), label: "Spent" },
+          { icon: "📍", value: String(stopsTotal), label: "Stops" },
+        ].map((t) => (
+          <div key={t.label} className="bg-card border border-border rounded-xl p-2.5 text-center min-w-0">
+            <p style={{ fontSize: 15 }}>{t.icon}</p>
+            <p className="truncate" style={{ fontWeight: 800, fontSize: 13, color: "#16213E" }}>
+              {t.value}
+            </p>
+            <p className="text-muted-foreground" style={{ fontSize: 10 }}>
+              {t.label}
+            </p>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+
   return (
     <div className="flex-1 overflow-y-auto">
+      {isMobile ? mobileTop : (
+      <>
       {/* Cover */}
       <div className="relative h-52 overflow-hidden bg-slate-700">
         <ImageWithFallback
@@ -283,9 +438,14 @@ export function DesktopTripDetail({ onBack }: Props) {
           </div>
         ))}
       </div>
+      </>
+      )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mx-3 md:mx-6 mt-5 bg-muted rounded-xl p-1 w-fit max-w-[calc(100%-1.5rem)] overflow-x-auto">
+      <div
+        className="flex gap-1 mx-4 md:mx-6 mt-4 md:mt-5 bg-muted rounded-xl p-1 w-fit max-w-[calc(100%-2rem)] md:max-w-[calc(100%-1.5rem)] overflow-x-auto"
+        style={{ scrollbarWidth: "none" }}
+      >
         {tabs.map((t) => (
           <button
             key={t}
@@ -302,7 +462,7 @@ export function DesktopTripDetail({ onBack }: Props) {
         ))}
       </div>
 
-      <div className="px-3 md:px-6 py-5">
+      <div className="px-4 md:px-6 py-4 md:py-5">
         {activeTab === "itinerary" && <ItineraryTab canEdit={canEdit} />}
         {activeTab === "budget" && <BudgetTab trip={trip} canEdit={canEdit} />}
         {activeTab === "packing" && <PackingTab canEdit={canEdit} />}

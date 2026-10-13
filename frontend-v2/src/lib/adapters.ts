@@ -105,6 +105,16 @@ export const tripToCard = (trip: any) => {
   };
 };
 
+/** Inclusive day count from the trip dates; `duration` isn't kept in sync on edits. */
+export const tripDays = (trip: any): number => {
+  const start = Date.parse(trip?.start_date);
+  const end = Date.parse(trip?.end_date);
+  if (!Number.isNaN(start) && !Number.isNaN(end) && end >= start) {
+    return Math.round((end - start) / 86_400_000) + 1;
+  }
+  return Number(trip?.duration || 0);
+};
+
 // Backend trip -> shape consumed by DesktopExplore destination cards.
 export const tripToDestination = (trip: any) => ({
   id: trip.id,
@@ -114,7 +124,10 @@ export const tripToDestination = (trip: any) => ({
   tag: trip.difficulty
     ? trip.difficulty.charAt(0) + trip.difficulty.slice(1).toLowerCase()
     : "Trip",
-  duration: trip.duration_label || `${trip.duration || 1} days`,
+  duration: (() => {
+    const n = tripDays(trip) || 1;
+    return `${n} ${n === 1 ? "day" : "days"}`;
+  })(),
   budget: formatRp(trip.budget),
   members: trip.members_count ?? 0,
   status: trip.status,
@@ -164,7 +177,7 @@ export const tripToTemplate = (trip: any) => {
     destination: trip.destination,
     owner,
     author: memberName(owner),
-    days: trip.duration || 0,
+    days: tripDays(trip),
     budget: formatRpShort(trip.budget),
     saves: trip.saves_count ?? 0,
     isSaved: Boolean(trip.is_saved),

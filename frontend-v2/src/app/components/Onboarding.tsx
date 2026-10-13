@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 
+import { useIsMobile } from "./ui/use-mobile";
+
 const slides = [
   {
     headline: "Your journey,",
@@ -8,6 +10,8 @@ const slides = [
     sub: "From a single prompt to a full itinerary — flights, hotels, activities, and group budget.",
     emoji: "🗺️",
     bg: "from-[#E6F7EE] to-[#d0f0e0]",
+    mobileBg: "#E6F7EE",
+    accent: "#16B364",
     img: "https://images.unsplash.com/photo-1659094438327-493ee9cc0c4c?w=600&h=500&fit=crop&auto=format",
   },
   {
@@ -16,6 +20,8 @@ const slides = [
     sub: "Tell the AI where you want to go, or build it step by step. Your trip, your rules.",
     emoji: "✨",
     bg: "from-[#fff8f4] to-[#ffe8d6]",
+    mobileBg: "#FFF4EE",
+    accent: "#FF8A4C",
     img: "https://images.unsplash.com/photo-1563492065599-3520f775eeed?w=600&h=500&fit=crop&auto=format",
   },
   {
@@ -24,6 +30,8 @@ const slides = [
     sub: "Invite your crew, split costs, and keep everyone on the same page — no group chat chaos.",
     emoji: "👯",
     bg: "from-[#f0f4ff] to-[#dde6ff]",
+    mobileBg: "#EEF3FF",
+    accent: "#6366f1",
     img: "https://images.unsplash.com/photo-1517935706615-2717063c2225?w=600&h=500&fit=crop&auto=format",
   },
 ];
@@ -34,6 +42,7 @@ interface Props {
 
 export function Onboarding({ onFinish }: Props) {
   const [current, setCurrent] = useState(0);
+  const isMobile = useIsMobile();
 
   const next = () => {
     if (current < slides.length - 1) setCurrent((c) => c + 1);
@@ -41,6 +50,17 @@ export function Onboarding({ onFinish }: Props) {
   };
 
   const slide = slides[current];
+
+  if (isMobile) {
+    return (
+      <MobileOnboarding
+        current={current}
+        setCurrent={setCurrent}
+        next={next}
+        onSkip={onFinish}
+      />
+    );
+  }
 
   return (
     <div className="w-full h-full flex items-center justify-center bg-background">
@@ -110,6 +130,112 @@ export function Onboarding({ onFinish }: Props) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Phone layout: skip, illustration, headline, pill dots, full-width CTA. */
+function MobileOnboarding({
+  current,
+  setCurrent,
+  next,
+  onSkip,
+}: {
+  current: number;
+  setCurrent: (i: number) => void;
+  next: () => void;
+  onSkip: () => void;
+}) {
+  const slide = slides[current];
+  const last = current === slides.length - 1;
+  const headline = {
+    fontWeight: 800,
+    fontSize: 26,
+    letterSpacing: "-0.03em",
+    lineHeight: 1.15,
+  } as const;
+
+  return (
+    <div
+      className="w-full min-h-full flex flex-col"
+      style={{
+        background: slide.mobileBg,
+        transition: "background 0.4s",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
+    >
+      <div className="flex justify-end px-5 pt-4 h-10">
+        {!last && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="text-muted-foreground"
+            style={{ fontSize: 13, fontWeight: 500 }}
+          >
+            Skip
+          </button>
+        )}
+      </div>
+
+      <div className="mx-5 mt-2 rounded-2xl overflow-hidden h-56 relative bg-white/40 shrink-0">
+        <img
+          src={slide.img}
+          alt=""
+          className="w-full h-full object-cover"
+          style={{ transition: "all 0.4s" }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div
+            className="w-16 h-16 rounded-2xl bg-white/80 backdrop-blur-sm flex items-center justify-center"
+            style={{ fontSize: 36 }}
+          >
+            {slide.emoji}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 px-6 pt-6">
+        <h1 style={{ ...headline, color: "#16213E" }}>{slide.headline}</h1>
+        <h1 style={{ ...headline, color: slide.accent }}>{slide.highlight}</h1>
+        <p className="text-muted-foreground mt-3" style={{ fontSize: 14, lineHeight: 1.6 }}>
+          {slide.sub}
+        </p>
+      </div>
+
+      <div className="px-6 pb-8 pt-6 space-y-5">
+        <div className="flex items-center gap-2">
+          {slides.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setCurrent(i)}
+              aria-label={`Slide ${i + 1}`}
+              aria-current={i === current ? "step" : undefined}
+              style={{
+                height: 8,
+                width: i === current ? 24 : 8,
+                borderRadius: 999,
+                background: i === current ? "#16B364" : "#E7ECF4",
+                transition: "all 0.3s",
+                border: "none",
+                padding: 0,
+              }}
+            />
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={next}
+          className="w-full flex items-center justify-center gap-2 text-white rounded-2xl py-4"
+          style={{ background: "#16B364", fontSize: 15, fontWeight: 700 }}
+        >
+          {last ? "Get started" : "Next"}
+          <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

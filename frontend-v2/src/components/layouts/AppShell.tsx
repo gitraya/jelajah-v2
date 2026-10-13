@@ -2,14 +2,13 @@ import {
   Briefcase,
   ChevronRight,
   Compass,
-  CircleUserRound,
   LogOut,
   Map,
   MessageCircle,
   Sparkles,
   Users,
 } from "lucide-react";
-import { Outlet, useLocation, useNavigate } from "react-router";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -182,56 +181,145 @@ function Sidebar() {
   );
 }
 
+/**
+ * Routes that draw their own header on mobile: the AI builder, a trip's
+ * detail page, and an open conversation (?c= / ?user= on /messages).
+ */
+function hasOwnMobileHeader(pathname: string, search: URLSearchParams) {
+  if (pathname.startsWith("/ai-builder")) return true;
+  if (/^\/trips\/[^/]+/.test(pathname)) return true;
+  if (pathname.startsWith("/messages") && (search.get("c") || search.get("user")))
+    return true;
+  return false;
+}
+
 export default function AppShell() {
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const ownHeader = hasOwnMobileHeader(location.pathname, searchParams);
+  // The AI chat has its own bottom input + save bar on mobile.
+  const showTabBar = !location.pathname.startsWith("/ai-builder");
+
   return (
     <div
       className="size-full flex flex-col bg-background"
-      style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+      // viewport-fit=cover: keep content clear of the notch (0 on desktop).
+      style={{
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        paddingTop: "env(safe-area-inset-top)",
+      }}
     >
+      {!ownHeader && <MobileHeader />}
       <div className="flex-1 min-h-0">
-        <div className="flex h-full gap-3 p-2 md:p-4">
+        {/* Mobile: full-bleed page. md+: sidebar + rounded card. */}
+        <div className="flex h-full md:gap-3 md:p-4">
           <Sidebar />
-          <div
-            className="flex-1 min-w-0 bg-card rounded-2xl overflow-hidden flex flex-col border border-border"
-            style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.06)" }}
-          >
+          <div className="flex-1 min-w-0 overflow-hidden flex flex-col md:bg-card md:rounded-2xl md:border md:border-border md:shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
             <Outlet />
           </div>
         </div>
       </div>
-      <MobileNav />
+      {showTabBar && <MobileTabBar />}
     </div>
   );
 }
 
-function MobileNav() {
+/** Mobile-only top bar: logo, messages (with unread badge), avatar. */
+function MobileHeader() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { unreadCount } = useMessages();
+
+  return (
+    <header className="md:hidden shrink-0 flex items-center justify-between px-4 pt-3 pb-2 bg-background">
+      <button
+        type="button"
+        onClick={() => navigate("/")}
+        className="flex items-center gap-2"
+        aria-label="Jelajah home"
+      >
+        <div className="w-7 h-7 rounded-xl bg-primary flex items-center justify-center">
+          <Compass className="w-3.5 h-3.5 text-white" strokeWidth={2} />
+        </div>
+        <span
+          className="text-[#16213E]"
+          style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.02em" }}
+        >
+          Jelajah<span className="text-primary">.</span>
+        </span>
+      </button>
+      {user ? (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("/messages")}
+            aria-label={unreadCount ? `Messages, ${unreadCount} unread` : "Messages"}
+            className="relative w-8 h-8 rounded-full bg-muted flex items-center justify-center text-foreground"
+          >
+            <MessageCircle className="w-4 h-4" strokeWidth={2} />
+            <NavBadge count={unreadCount} className="absolute -top-1 -right-1.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/profile")}
+            aria-label="Your profile"
+            className="rounded-full"
+          >
+            <UserAvatar
+              person={user}
+              className="w-8 h-8 rounded-full"
+              style={{ fontSize: 11 }}
+            />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => navigate("/login")}
+          className="bg-primary text-white rounded-xl px-3 py-1.5"
+          style={{ fontSize: 12, fontWeight: 600 }}
+        >
+          Sign in
+        </button>
+      )}
+    </header>
+  );
+}
+
+const TABS = [
+  { to: "/", label: "Plan", icon: Sparkles },
+  { to: "/explore", label: "Explore", icon: Map },
+  { to: "/trips", label: "Trips", icon: Briefcase },
+  { to: "/buddies", label: "Buddies", icon: Users },
+];
+
+/** Mobile-only bottom tab bar (Plan / Explore / Trips / Buddies). */
+function MobileTabBar() {
   const navigate = useNavigate();
   const location = useLocation();
   const isActive = (to: string) =>
     to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
-  const { unreadCount } = useMessages();
-  const items = [...NAV, { to: "/profile", label: "Profile", icon: CircleUserRound }];
 
   return (
-    <nav className="md:hidden grid grid-cols-6 border-t border-border bg-card px-1 py-2" aria-label="Main navigation">
-      {items.map(({ to, label, icon: Icon }) => {
+    <nav
+      className="md:hidden shrink-0 flex border-t border-border bg-card"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      aria-label="Main navigation"
+    >
+      {TABS.map(({ to, label, icon: Icon }) => {
         const active = isActive(to);
+        const color = active ? "#16B364" : "#8A93A6";
         return (
           <button
             key={to}
             type="button"
             onClick={() => navigate(to)}
-            className={`flex flex-col items-center gap-1 py-1 ${active ? "text-primary" : "text-muted-foreground"}`}
-            style={{ fontSize: 10, fontWeight: active ? 700 : 500 }}
+            aria-current={active ? "page" : undefined}
+            className="flex-1 flex flex-col items-center gap-0.5 pt-2 pb-1.5"
           >
-            <span className="relative">
-              <Icon className="w-4 h-4" />
-              {to === "/messages" ? (
-                <NavBadge count={unreadCount} className="absolute -top-2 -right-3" />
-              ) : null}
-            </span>
-            <span className="truncate max-w-full px-0.5">
-              {label === "Travel buddies" ? "Buddies" : label}
+            <Icon className="w-5 h-5" style={{ color }} strokeWidth={active ? 2.5 : 2} />
+            <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color, lineHeight: 1.3 }}>
+              {label}
             </span>
           </button>
         );

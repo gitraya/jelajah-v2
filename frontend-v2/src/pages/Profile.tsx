@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, Loader2, MapPin, Plus, X } from "lucide-react";
+import { Camera, Loader2, LogOut, MapPin, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -18,7 +18,7 @@ import { formatDate, getErrorMessage } from "@/lib/utils";
 
 /** Your own profile, backed by GET/PATCH /auth/me/. */
 export default function Profile() {
-  const { user, updateProfile, uploadAvatar, removeAvatar } = useAuth();
+  const { user, logout, updateProfile, uploadAvatar, removeAvatar } = useAuth();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -84,8 +84,8 @@ export default function Profile() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-10 py-8">
-      <div className="flex items-center gap-4 mb-7">
+    <div className="flex-1 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
+      <div className="flex items-center gap-4 mb-5 md:mb-7">
         {avatarPicker.input}
         <button
           type="button"
@@ -115,19 +115,19 @@ export default function Profile() {
             <Camera className="w-3 h-3" />
           </span>
         </button>
-        <div>
+        <div className="min-w-0">
           <h1
-            className="text-foreground mb-0.5"
-            style={{ fontWeight: 800, fontSize: 26, letterSpacing: "-0.03em" }}
+            className="text-foreground mb-0.5 break-words text-[22px] md:text-[26px]"
+            style={{ fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.25 }}
           >
             {`${user.first_name || ""} ${user.last_name || ""}`.trim() ||
               user.email}
           </h1>
-          <p className="text-muted-foreground" style={{ fontSize: 13 }}>
+          <p className="text-muted-foreground break-words" style={{ fontSize: 13 }}>
             {user.email}
             {user.date_joined ? ` · joined ${formatDate(user.date_joined)}` : ""}
           </p>
-          <div className="flex items-center gap-3 mt-1.5" style={{ fontSize: 12, fontWeight: 600 }}>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5" style={{ fontSize: 12, fontWeight: 600 }}>
             <button
               type="button"
               onClick={avatarPicker.open}
@@ -153,7 +153,7 @@ export default function Profile() {
         </div>
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-6 max-w-2xl space-y-4">
+      <div className="bg-card border border-border rounded-2xl p-4 md:p-6 max-w-2xl space-y-4">
         <FieldRow>
           <Field label="First name" htmlFor="pf-first">
             <Input
@@ -229,6 +229,16 @@ export default function Profile() {
           </Button>
         </div>
       </div>
+
+      {/* Mobile has no sidebar, so log out lives here. */}
+      <button
+        type="button"
+        onClick={() => logout()}
+        className="md:hidden mt-4 w-full flex items-center justify-center gap-2 border border-border bg-card rounded-2xl py-3 text-destructive"
+        style={{ fontSize: 14, fontWeight: 600 }}
+      >
+        <LogOut className="w-4 h-4" /> Log out
+      </button>
     </div>
   );
 }

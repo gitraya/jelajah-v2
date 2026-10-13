@@ -142,34 +142,37 @@ export function DesktopTrips() {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-center justify-between gap-3 mb-5 md:mb-6">
+        <div className="min-w-0">
           <h1
-            className="text-foreground mb-1"
-            style={{ fontWeight: 800, fontSize: 30, letterSpacing: "-0.03em" }}
+            className="text-foreground mb-1 text-[24px] md:text-[30px]"
+            style={{ fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.25 }}
           >
             Your <span className="text-primary">trips</span>
           </h1>
-          <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+          <p className="text-muted-foreground text-[13px] md:text-[14px]">
             {trips.length} trips ·{" "}
             {trips.filter((t: any) => t.status !== "past").length} active
           </p>
         </div>
         <button
           onClick={openCreate}
-          className="bg-primary text-white rounded-2xl px-5 py-2.5 flex items-center gap-2 hover:bg-[#13a058] transition-colors"
+          className="bg-primary text-white rounded-2xl px-3.5 py-2 md:px-5 md:py-2.5 flex items-center gap-2 hover:bg-[#13a058] transition-colors shrink-0 whitespace-nowrap"
           style={{ fontSize: 14, fontWeight: 600 }}
         >
           <Plus className="w-4 h-4" /> New trip
         </button>
       </div>
 
-      <div className="flex gap-1 bg-muted rounded-xl p-1 w-fit mb-7">
+      <div
+        className="flex gap-1 bg-muted rounded-xl p-1 w-fit max-w-full overflow-x-auto mb-5 md:mb-7"
+        style={{ scrollbarWidth: "none" }}
+      >
         {(["all", "upcoming", "planning", "past"] as TripFilter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 rounded-lg capitalize transition-all ${
+            className={`px-3 md:px-4 py-1.5 rounded-lg capitalize transition-all shrink-0 ${
               filter === f
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -190,8 +193,8 @@ export function DesktopTrips() {
               key={trip.id}
               className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-md hover:border-primary/20 transition-all group"
             >
-              <div className="flex">
-                <div className="relative w-24 sm:w-40 md:w-56 shrink-0 overflow-hidden bg-slate-200">
+              <div className="flex flex-col md:flex-row">
+                <div className="relative h-36 w-full md:h-auto md:w-56 shrink-0 overflow-hidden bg-slate-200">
                   <ImageWithFallback
                     src={trip.img}
                     alt={trip.name}
@@ -206,10 +209,10 @@ export function DesktopTrips() {
                   </div>
                 </div>
 
-                <div className="flex-1 p-5">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
+                <div className="flex-1 min-w-0 p-4 md:p-5">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
                         <h3
                           className="text-foreground"
                           style={{ fontWeight: 700, fontSize: 17 }}
@@ -267,7 +270,7 @@ export function DesktopTrips() {
                   </div>
 
                   <div
-                    className="flex items-center gap-5 mb-4 text-muted-foreground"
+                    className="flex flex-wrap items-center gap-x-5 gap-y-1 mb-4 text-muted-foreground"
                     style={{ fontSize: 13 }}
                   >
                     <span className="flex items-center gap-1.5">
@@ -303,8 +306,8 @@ export function DesktopTrips() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex -space-x-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex -space-x-2 min-w-0">
                       {trip.members.map((m: string, i: number) => (
                         <div
                           key={i}
@@ -322,7 +325,7 @@ export function DesktopTrips() {
                     </div>
                     <button
                       onClick={() => navigate(`/trips/${trip.id}`)}
-                      className="bg-secondary text-secondary-foreground rounded-xl px-4 py-1.5 hover:bg-primary hover:text-white transition-colors"
+                      className="bg-secondary text-secondary-foreground rounded-xl px-3 md:px-4 py-1.5 hover:bg-primary hover:text-white transition-colors shrink-0 whitespace-nowrap"
                       style={{ fontSize: 13, fontWeight: 600 }}
                     >
                       {trip.status === "past"

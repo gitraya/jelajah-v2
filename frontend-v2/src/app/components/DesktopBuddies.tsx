@@ -150,15 +150,15 @@ export function DesktopBuddies() {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto px-4 py-5 md:px-10 md:py-8">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5 md:mb-6">
+        <div className="min-w-0">
           <h1
-            className="text-foreground mb-1"
-            style={{ fontWeight: 800, fontSize: 30, letterSpacing: "-0.03em" }}
+            className="text-foreground mb-1 text-[24px] md:text-[30px]"
+            style={{ fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.25 }}
           >
             Travel <span className="text-primary">buddies</span>
           </h1>
-          <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+          <p className="text-muted-foreground text-[13px] md:text-[14px]">
             {isLoading
               ? "People you've travelled with across your trips"
               : `${buddies.length} ${buddies.length === 1 ? "friend" : "friends"} · ${onlineCount} online now`}
@@ -167,7 +167,7 @@ export function DesktopBuddies() {
         <button
           type="button"
           onClick={() => setInviting({})}
-          className="bg-primary text-white rounded-2xl px-5 py-2.5 flex items-center gap-2 hover:bg-[#13a058] transition-colors"
+          className="bg-primary text-white rounded-2xl px-3.5 py-2 md:px-5 md:py-2.5 flex items-center gap-2 hover:bg-[#13a058] transition-colors whitespace-nowrap"
           style={{ fontSize: 14, fontWeight: 600 }}
         >
           <UserPlus className="w-4 h-4" /> Invite a buddy
@@ -175,7 +175,7 @@ export function DesktopBuddies() {
       </div>
 
       {openInvites.length > 0 && (
-        <div className="bg-card border border-border rounded-2xl p-5 mb-6">
+        <div className="bg-card border border-border rounded-2xl p-4 md:p-5 mb-6">
           <p
             className="text-foreground mb-3"
             style={{ fontWeight: 700, fontSize: 15 }}
@@ -186,7 +186,7 @@ export function DesktopBuddies() {
             {openInvites.map((p) => (
               <div
                 key={p.memberId}
-                className="flex items-center gap-3 rounded-xl border border-border px-4 py-2.5"
+                className="flex items-center gap-3 rounded-xl border border-border px-3 md:px-4 py-2.5"
               >
                 <div
                   className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0"
@@ -312,7 +312,7 @@ function BuddyCard({
 }) {
   const shared = b.sharedTrips.length;
   return (
-    <div className="bg-card border border-border rounded-2xl p-5 hover:border-primary/30 hover:shadow-sm transition-all flex flex-col">
+    <div className="bg-card border border-border rounded-2xl p-4 md:p-5 hover:border-primary/30 hover:shadow-sm transition-all flex flex-col">
       <div className="flex items-start gap-3 mb-4">
         <div className="relative shrink-0">
           <UserAvatar
@@ -385,7 +385,7 @@ function BuddyCard({
       )}
 
       <div
-        className="flex items-center gap-4 border-t border-border pt-3 mb-3 mt-auto"
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 mb-3 mt-auto"
         style={{ fontSize: 12 }}
       >
         <span className="text-muted-foreground flex items-center gap-1">
