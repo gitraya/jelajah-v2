@@ -1,7 +1,12 @@
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { CheckCircle, Circle, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Checkbox } from "@/app/components/ui/checkbox";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/app/components/ui/dropdown-menu";
+import { useIsMobile } from "@/app/components/ui/use-mobile";
 import {
   Select,
   SelectContent,
@@ -14,7 +19,13 @@ import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { PackingFormModal } from "@/components/modals/PackingFormModal";
 import { memberName } from "@/lib/adapters";
 import { getPackingCategoryColor } from "@/lib/colors";
-import { AddButton, EmptyState, ItemActions } from "./ItemActions";
+import {
+  AddButton,
+  EmptyState,
+  ItemActions,
+  MOBILE_CARD,
+  TapMenu,
+} from "./ItemActions";
 
 export function PackingTab({ canEdit }: { canEdit: boolean }) {
   const {
@@ -30,6 +41,7 @@ export function PackingTab({ canEdit }: { canEdit: boolean }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [deleting, setDeleting] = useState<any>(null);
+  const isMobile = useIsMobile();
 
   const total = statistics?.total_items ?? 0;
   const packed = statistics?.packed_items ?? 0;
@@ -42,12 +54,12 @@ export function PackingTab({ canEdit }: { canEdit: boolean }) {
 
   return (
     <div>
-      <div className="bg-card border border-border rounded-2xl p-5 mb-5">
-        <div className="flex items-center justify-between mb-2">
+      <div className="bg-card border border-border rounded-2xl p-4 md:p-5 mb-4 md:mb-5">
+        <div className="flex items-center justify-between gap-3 mb-2">
           <p className="text-foreground" style={{ fontWeight: 700, fontSize: 15 }}>
             Packing progress
           </p>
-          <p className="text-muted-foreground" style={{ fontSize: 13 }}>
+          <p className="text-muted-foreground shrink-0" style={{ fontSize: 13 }}>
             {packed} of {total} packed
           </p>
         </div>
@@ -59,11 +71,11 @@ export function PackingTab({ canEdit }: { canEdit: boolean }) {
         </div>
 
         {statistics?.category_stats?.length ? (
-          <div className="flex flex-wrap gap-2 mt-4">
+          <div className="flex flex-wrap gap-1.5 md:gap-2 mt-3 md:mt-4">
             {statistics.category_stats.map((c: any) => (
               <span
                 key={c.category.id || c.category.name}
-                className={`rounded-full px-3 py-1.5 ${getPackingCategoryColor(
+                className={`rounded-full px-2.5 md:px-3 py-1 md:py-1.5 ${getPackingCategoryColor(
                   c.category.name
                 )}`}
                 style={{ fontSize: 12, fontWeight: 600 }}
@@ -77,7 +89,7 @@ export function PackingTab({ canEdit }: { canEdit: boolean }) {
 
       <div className="flex items-center gap-3 mb-4">
         <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="flex-1 min-w-0 md:flex-none md:w-48">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -89,16 +101,96 @@ export function PackingTab({ canEdit }: { canEdit: boolean }) {
           </SelectContent>
         </Select>
 
-        <div className="flex-1" />
+        <div className="hidden md:block flex-1" />
 
         {canEdit ? (
           <AddButton onClick={openCreate}>
-            <Plus className="w-4 h-4" /> Add item
+            <Plus className="w-4 h-4" />
+            <span>
+              Add<span className="hidden md:inline"> item</span>
+            </span>
           </AddButton>
         ) : null}
       </div>
 
-      {packingItems?.length ? (
+      {packingItems?.length && isMobile ? (
+        <div className="space-y-2">
+          {packingItems.map((item: any) => (
+            <div key={item.id} className={MOBILE_CARD}>
+              <Checkbox
+                checked={Boolean(item.packed)}
+                disabled={!canEdit}
+                onCheckedChange={() => togglePacking(item.id)}
+                aria-label={`Mark ${item.name} packed`}
+              />
+              <TapMenu
+                label={item.name}
+                className="flex-1 min-w-0 self-stretch flex flex-col justify-center"
+                body={
+                  <>
+                    <p
+                      className={`line-clamp-2 break-words ${
+                        item.packed ? "text-muted-foreground line-through" : ""
+                      }`}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: item.packed ? undefined : "#16213E",
+                      }}
+                    >
+                      {item.name}
+                    </p>
+                    <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                      <span className="text-muted-foreground truncate" style={{ fontSize: 10 }}>
+                        {item.assigned_to ? memberName(item.assigned_to) : "Unassigned"}
+                        {item.quantity > 1 ? ` · ×${item.quantity}` : ""}
+                      </span>
+                      {item.category?.name ? (
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 shrink-0 ${getPackingCategoryColor(
+                            item.category.name
+                          )}`}
+                          style={{ fontSize: 9, fontWeight: 600 }}
+                        >
+                          {item.category.name}
+                        </span>
+                      ) : null}
+                    </div>
+                  </>
+                }
+              >
+                {canEdit ? (
+                  <>
+                    <DropdownMenuItem onSelect={() => togglePacking(item.id)}>
+                      {item.packed ? (
+                        <>
+                          <Circle className="w-4 h-4" /> Mark as not packed
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4" style={{ color: "#16B364" }} /> Mark as packed
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setEditing(item);
+                        setFormOpen(true);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4" /> Edit item
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(item)}>
+                      <Trash2 className="w-4 h-4" /> Delete
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </TapMenu>
+            </div>
+          ))}
+        </div>
+      ) : packingItems?.length ? (
         <div className="space-y-2">
           {packingItems.map((item: any) => (
             <div

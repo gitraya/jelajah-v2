@@ -21,17 +21,31 @@ interface Props {
   onChanged: () => unknown;
 }
 
-/** Read-only row of 1–5 stars. */
+/**
+ * Read-only row of 1–5 stars, rounded to the nearest half so a 4.5 average
+ * shows four and a half stars rather than five.
+ */
 export function Stars({ value, size = 14 }: { value: number; size?: number }) {
+  const rounded = Math.round((Number(value) || 0) * 2) / 2;
   return (
-    <span className="inline-flex items-center gap-0.5" aria-label={`${value} out of 5 stars`}>
-      {Array.from({ length: REVIEW_MAX_RATING }, (_, i) => (
-        <Star
-          key={i}
-          style={{ width: size, height: size, color: i < Math.round(value) ? STAR : "#D5DAE3" }}
-          fill={i < Math.round(value) ? STAR : "none"}
-        />
-      ))}
+    <span
+      className="inline-flex items-center gap-0.5"
+      role="img"
+      aria-label={`${rounded} out of ${REVIEW_MAX_RATING} stars`}
+    >
+      {Array.from({ length: REVIEW_MAX_RATING }, (_, i) => {
+        const fill = Math.max(0, Math.min(1, rounded - i)); // 0, 0.5 or 1
+        return (
+          <span key={i} className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
+            <Star style={{ width: size, height: size, color: "#D5DAE3" }} fill="none" />
+            {fill > 0 ? (
+              <span className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${fill * 100}%` }}>
+                <Star style={{ width: size, height: size, color: STAR }} fill={STAR} />
+              </span>
+            ) : null}
+          </span>
+        );
+      })}
     </span>
   );
 }
@@ -155,10 +169,10 @@ export function ReviewsTab({ trip, onChanged }: Props) {
   const showForm = canReview && (!myReview || editing);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4 md:gap-5">
       {/* Summary + your review */}
-      <div className="space-y-4">
-        <div className="bg-card border border-border rounded-2xl p-5">
+      <div className="space-y-4 min-w-0">
+        <div className="bg-card border border-border rounded-2xl p-4 md:p-5">
           <div className="flex items-center gap-4 mb-4">
             <div>
               <p
@@ -193,7 +207,7 @@ export function ReviewsTab({ trip, onChanged }: Props) {
         </div>
 
         {showForm ? (
-          <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="bg-card border border-border rounded-2xl p-4 md:p-5">
             <p className="text-foreground mb-2" style={{ fontWeight: 700, fontSize: 15 }}>
               {myReview ? "Edit your review" : "Rate this trip"}
             </p>
@@ -231,7 +245,7 @@ export function ReviewsTab({ trip, onChanged }: Props) {
             </div>
           </div>
         ) : canReview && myReview ? (
-          <div className="bg-secondary border border-primary/20 rounded-2xl p-5">
+          <div className="bg-secondary border border-primary/20 rounded-2xl p-4 md:p-5">
             <div className="flex items-center justify-between mb-1">
               <p className="text-secondary-foreground" style={{ fontWeight: 700, fontSize: 14 }}>
                 Your review
@@ -263,7 +277,7 @@ export function ReviewsTab({ trip, onChanged }: Props) {
             ) : null}
           </div>
         ) : !isAuthenticated ? (
-          <div className="bg-card border border-dashed border-border rounded-2xl p-5 text-center">
+          <div className="bg-card border border-dashed border-border rounded-2xl p-4 md:p-5 text-center">
             <p className="text-muted-foreground mb-3" style={{ fontSize: 13 }}>
               Sign in to rate this trip.
             </p>
@@ -280,7 +294,7 @@ export function ReviewsTab({ trip, onChanged }: Props) {
       </div>
 
       {/* List */}
-      <div>
+      <div className="min-w-0">
         {loading ? (
           <div className="flex justify-center py-10 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -313,7 +327,7 @@ export function ReviewsTab({ trip, onChanged }: Props) {
                     <UserAvatar person={r.user} className="w-10 h-10 rounded-full" style={{ fontSize: 12 }} />
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-baseline gap-x-2">
-                        <p className="text-foreground truncate" style={{ fontWeight: 700, fontSize: 14 }}>
+                        <p className="text-foreground truncate min-w-0" style={{ fontWeight: 700, fontSize: 14 }}>
                           {memberName(r.user || {})}
                         </p>
                         {mine ? (

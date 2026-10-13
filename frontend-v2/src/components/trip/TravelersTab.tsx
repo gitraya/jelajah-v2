@@ -1,6 +1,15 @@
 import { useState } from "react";
-import { Check, UserPlus, X } from "lucide-react";
+import { Check, MoreHorizontal, Pencil, Plus, Trash2, UserPlus, X } from "lucide-react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/app/components/ui/dropdown-menu";
+import { useIsMobile } from "@/app/components/ui/use-mobile";
 import {
   Select,
   SelectContent,
@@ -8,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/components/ui/select";
-import { TRIP_MEMBER_STATUSES } from "@/config";
+import { TRIP_MEMBER_ROLES, TRIP_MEMBER_STATUSES } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembers } from "@/contexts/MembersContext";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
@@ -16,7 +25,13 @@ import { MemberFormModal } from "@/components/modals/MemberFormModal";
 import { UserAvatar } from "@/components/UserAvatar";
 import { memberName } from "@/lib/adapters";
 import { getMemberRoleColor, getMemberStatusColor } from "@/lib/colors";
-import { AddButton, EmptyState, ItemActions } from "./ItemActions";
+import { AddButton, EmptyState, ItemActions, Pill, type PillTone } from "./ItemActions";
+
+const STATUS_TONE: Record<string, PillTone> = {
+  ACCEPTED: "green",
+  PENDING: "amber",
+  DECLINED: "red",
+};
 
 export function TravelersTab({ trip, canEdit }: { trip: any; canEdit: boolean }) {
   const {
@@ -32,6 +47,7 @@ export function TravelersTab({ trip, canEdit }: { trip: any; canEdit: boolean })
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [deleting, setDeleting] = useState<any>(null);
+  const isMobile = useIsMobile();
 
   const openInvite = () => {
     setEditing(null);
@@ -49,7 +65,7 @@ export function TravelersTab({ trip, canEdit }: { trip: any; canEdit: boolean })
     <div>
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-          <SelectTrigger className="w-44">
+          <SelectTrigger className="flex-1 min-w-0 md:flex-none md:w-44">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -62,10 +78,14 @@ export function TravelersTab({ trip, canEdit }: { trip: any; canEdit: boolean })
           </SelectContent>
         </Select>
 
-        <div className="flex-1" />
+        <div className="hidden md:block flex-1" />
 
         {statistics?.total ? (
-          <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+          // Phones: its own line under the select + invite button.
+          <p
+            className="text-muted-foreground order-last basis-full md:order-none md:basis-auto"
+            style={{ fontSize: 12 }}
+          >
             {statistics.accepted ?? 0} accepted · {statistics.pending ?? 0} pending
             {trip?.member_spots
               ? ` · ${trip.member_spots} spots`
@@ -75,12 +95,120 @@ export function TravelersTab({ trip, canEdit }: { trip: any; canEdit: boolean })
 
         {canEdit ? (
           <AddButton onClick={openInvite}>
-            <UserPlus className="w-4 h-4" /> Invite traveler
+            <UserPlus className="w-4 h-4" />
+            <span>
+              Invite<span className="hidden md:inline"> traveler</span>
+            </span>
           </AddButton>
         ) : null}
       </div>
 
-      {filteredMembers?.length ? (
+      {filteredMembers?.length && isMobile ? (
+        <div className="space-y-2">
+          {filteredMembers.map((m: any) => {
+            const editable = canEdit && !isLocked(m);
+            const name = memberName(m);
+            const role =
+              TRIP_MEMBER_ROLES[m.role as keyof typeof TRIP_MEMBER_ROLES]?.[1] || m.role;
+            const status =
+              TRIP_MEMBER_STATUSES[m.status as keyof typeof TRIP_MEMBER_STATUSES] ||
+              m.status;
+            return (
+              <div
+                key={m.id}
+                className="bg-card border border-border rounded-xl px-3 py-2.5 flex items-center gap-2.5 min-w-0"
+              >
+                <UserAvatar
+                  person={m}
+                  className="w-10 h-10 rounded-xl"
+                  style={{ fontSize: 12, fontWeight: 800 }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="truncate" style={{ fontSize: 13, fontWeight: 600, color: "#16213E" }}>
+                    {name}
+                  </p>
+                  {m.user?.email && m.user.email !== name ? (
+                    <p className="text-muted-foreground truncate" style={{ fontSize: 10 }}>
+                      {m.user.email}
+                    </p>
+                  ) : null}
+                  <div className="flex items-center gap-1 mt-1 min-w-0">
+                    <Pill tone={m.role === "MEMBER" ? "muted" : "green"}>{role}</Pill>
+                    <Pill tone={STATUS_TONE[m.status] || "muted"}>{status}</Pill>
+                  </div>
+                </div>
+
+                {editable && m.status === "PENDING" ? (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      aria-label={`Accept ${name}`}
+                      onClick={() => updateMember(m.id, { status: "ACCEPTED" })}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center"
+                      style={{ background: "#E6F7EE", color: "#16B364" }}
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Decline ${name}`}
+                      onClick={() => updateMember(m.id, { status: "DECLINED" })}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center"
+                      style={{ background: "#FDECEC", color: "#E5605B" }}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : null}
+
+                {editable ? (
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`${name} actions`}
+                        className="w-8 h-8 -mr-1 rounded-lg flex items-center justify-center text-muted-foreground shrink-0 active:bg-muted"
+                      >
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="rounded-xl min-w-[200px]">
+                      <DropdownMenuLabel className="truncate max-w-[240px]">{name}</DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          setEditing(m);
+                          setFormOpen(true);
+                        }}
+                      >
+                        <Pencil className="w-4 h-4" /> Manage traveler
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(m)}>
+                        <Trash2 className="w-4 h-4" /> Remove
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
+            );
+          })}
+
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={openInvite}
+              className="w-full bg-card border-2 border-dashed border-border rounded-xl px-3 py-2.5 flex items-center gap-2.5 active:border-primary active:bg-secondary transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
+                <Plus className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <span className="text-muted-foreground" style={{ fontSize: 13 }}>
+                Invite someone
+              </span>
+            </button>
+          ) : null}
+        </div>
+      ) : filteredMembers?.length ? (
         <div className="grid grid-cols-2 gap-4">
           {filteredMembers.map((m: any) => (
             <div
