@@ -8,6 +8,7 @@ import {
   Bookmark,
   Copy,
   Loader2,
+  Star,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -15,7 +16,7 @@ import { toast } from "sonner";
 import { useTrips } from "@/contexts/TripsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/utils";
-import { tripToDestination, tripToTemplate } from "@/lib/adapters";
+import { reviewsLabel, tripToDestination, tripToTemplate } from "@/lib/adapters";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getTripDifficultyColor } from "@/lib/colors";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
@@ -242,13 +243,14 @@ export function DesktopExplore() {
               </div>
 
               <div className="p-4">
-                <div className="flex items-start justify-between mb-2">
+                <div className="flex items-start justify-between gap-2 mb-2">
                   <h3
                     className="text-foreground"
                     style={{ fontWeight: 700, fontSize: 15 }}
                   >
                     {dest.name}
                   </h3>
+                  <RatingBadge rating={dest.rating} />
                 </div>
                 <div
                   className="flex items-center gap-3 text-muted-foreground mb-3"
@@ -281,6 +283,9 @@ export function DesktopExplore() {
                     >
                       {dest.budget}
                     </span>
+                    <p className="text-muted-foreground" style={{ fontSize: 11 }}>
+                      {dest.reviewsCount > 0 ? reviewsLabel(dest.reviewsCount) : "No reviews yet"}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {dest.raw.is_member ? (
@@ -377,6 +382,17 @@ export function DesktopExplore() {
                   <span className="text-foreground" style={{ fontWeight: 600 }}>
                     {tpl.budget}
                   </span>
+                  {tpl.rating ? (
+                    <span
+                      className="flex items-center gap-1"
+                      title={reviewsLabel(tpl.reviewsCount)}
+                    >
+                      <Star className="w-3 h-3" style={{ color: "#FF8A4C" }} fill="#FF8A4C" />
+                      <span className="text-foreground" style={{ fontWeight: 700 }}>
+                        {tpl.rating}
+                      </span>
+                    </span>
+                  ) : null}
                   <span className="ml-auto flex items-center gap-1">
                     <Bookmark
                       className="w-3 h-3"
@@ -408,6 +424,26 @@ export function DesktopExplore() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/** ★ 4.8 in the reference's orange, or a "New" pill for an unreviewed trip. */
+function RatingBadge({ rating }: { rating: string | null }) {
+  if (!rating) {
+    return (
+      <span
+        className="shrink-0 bg-[#FF8A4C]/10 text-[#FF8A4C] rounded-full px-2 py-0.5"
+        style={{ fontSize: 11, fontWeight: 700 }}
+      >
+        New
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      <Star className="w-3.5 h-3.5" style={{ color: "#FF8A4C" }} fill="#FF8A4C" />
+      <span style={{ fontSize: 13, fontWeight: 700, color: "#16213E" }}>{rating}</span>
     </div>
   );
 }

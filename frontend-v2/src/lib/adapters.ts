@@ -120,6 +120,8 @@ export const tripToDestination = (trip: any) => ({
   status: trip.status,
   isSaved: Boolean(trip.is_saved),
   savesCount: trip.saves_count ?? 0,
+  rating: formatRating(trip.rating_avg),
+  reviewsCount: trip.reviews_count ?? 0,
   raw: trip,
 });
 
@@ -166,6 +168,8 @@ export const tripToTemplate = (trip: any) => {
     budget: formatRpShort(trip.budget),
     saves: trip.saves_count ?? 0,
     isSaved: Boolean(trip.is_saved),
+    rating: formatRating(trip.rating_avg),
+    reviewsCount: trip.reviews_count ?? 0,
     raw: trip,
   };
 };
@@ -198,4 +202,108 @@ export const formatDayLabel = (d?: string | null) => {
     day: "numeric",
     month: "short",
   });
+};
+
+// ---------------------------------------------------------------------------
+// Buddies, presence, messages, reviews
+// ---------------------------------------------------------------------------
+
+const toDate = (iso?: string | null) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+/** "just now" / "5m ago" / "2h ago" / "Yesterday" / "3 days ago" / "12 Sep". */
+export const timeAgo = (iso?: string | null, now: number = Date.now()) => {
+  const d = toDate(iso);
+  if (!d) return "";
+  const secs = Math.max(0, Math.round((now - d.getTime()) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(d.getFullYear() !== new Date(now).getFullYear() ? { year: "numeric" } : {}),
+  });
+};
+
+/** Presence line for a user: "Online", "Last seen 2h ago", or "Offline". */
+export const presenceLabel = (u: { is_online?: boolean; last_seen?: string | null }) => {
+  if (u?.is_online) return "Online";
+  const ago = timeAgo(u?.last_seen);
+  return ago ? `Last seen ${ago}` : "Offline";
+};
+
+export const PRESENCE_COLORS = { online: "#16B364", offline: "#8A93A6" };
+
+// Backend GET /auth/buddies/ item -> buddy card.
+export const buddyToCard = (b: any) => ({
+  id: b.id as string,
+  user: b,
+  name: memberName(b),
+  email: b.email || "",
+  location: b.location || "",
+  bio: b.bio || "",
+  interests: (b.interests || []) as string[],
+  isOnline: Boolean(b.is_online),
+  presence: presenceLabel(b),
+  tripsCount: b.trips_count ?? 0,
+  mutualCount: b.mutual_count ?? 0,
+  sharedTrips: (b.shared_trips || []) as {
+    id: string;
+    title: string;
+    destination?: string;
+    start_date?: string | null;
+  }[],
+});
+
+/** Short time for a chat bubble: "14:05". */
+export const messageTime = (iso?: string | null) => {
+  const d = toDate(iso);
+  return d
+    ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+    : "";
+};
+
+/** Local calendar-day key used to group chat messages. */
+export const dayKey = (iso?: string | null) => {
+  const d = toDate(iso);
+  return d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : "";
+};
+
+/** Chat day separator: "Today" / "Yesterday" / "Mon 12 Sep" / "12 Sep 2025". */
+export const dayLabel = (iso?: string | null) => {
+  const d = toDate(iso);
+  if (!d) return "";
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (dayKey(iso) === dayKey(today.toISOString())) return "Today";
+  if (dayKey(iso) === dayKey(yesterday.toISOString())) return "Yesterday";
+  return d.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(d.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  });
+};
+
+/** "4.8" for a rating average, or null when there are no reviews. */
+export const formatRating = (avg?: number | string | null) => {
+  if (avg === null || avg === undefined || avg === "") return null;
+  const n = Number(avg);
+  return Number.isNaN(n) ? null : n.toFixed(1);
+};
+
+/** "1 review" / "1,240 reviews". */
+export const reviewsLabel = (count?: number | null) => {
+  const n = Number(count || 0);
+  return `${n.toLocaleString("en-US")} ${n === 1 ? "review" : "reviews"}`;
 };

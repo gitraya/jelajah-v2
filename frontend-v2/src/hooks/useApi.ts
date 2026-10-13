@@ -8,18 +8,29 @@ import {
   putAPIData,
 } from "@/lib/api";
 
+// Shared across hook instances so parallel 401s (e.g. several pollers hitting
+// an expired token at once) trigger a single refresh.
+let refreshInFlight: Promise<boolean> | null = null;
+
 export const useApi = () => {
   const { checkAuth } = useAuth();
 
-  const refreshToken = async () => {
-    try {
-      await postAPIData("/auth/token/refresh/");
-      await checkAuth();
-      return true;
-    } catch (error) {
-      if (IS_DEVELOPMENT) console.error("Token refresh error:", error);
-      return false;
+  const refreshToken = () => {
+    if (!refreshInFlight) {
+      refreshInFlight = (async () => {
+        try {
+          await postAPIData("/auth/token/refresh/");
+          await checkAuth({ silent: true });
+          return true;
+        } catch (error) {
+          if (IS_DEVELOPMENT) console.error("Token refresh error:", error);
+          return false;
+        } finally {
+          refreshInFlight = null;
+        }
+      })();
     }
+    return refreshInFlight;
   };
 
   const getRequest = async (endpoint: string, config?: any): Promise<any> => {

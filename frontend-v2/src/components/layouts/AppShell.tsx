@@ -5,6 +5,7 @@ import {
   CircleUserRound,
   LogOut,
   Map,
+  MessageCircle,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -12,6 +13,7 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMessages } from "@/contexts/MessagesContext";
 import { useTrips } from "@/contexts/TripsContext";
 import { useEffect } from "react";
 
@@ -20,13 +22,29 @@ const NAV = [
   { to: "/explore", label: "Explore", icon: Map },
   { to: "/trips", label: "Trips", icon: Briefcase },
   { to: "/buddies", label: "Travel buddies", icon: Users },
+  { to: "/messages", label: "Messages", icon: MessageCircle },
 ];
+
+/** Small count pill for nav items (unread messages). */
+function NavBadge({ count, className = "" }: { count: number; className?: string }) {
+  if (!count) return null;
+  return (
+    <span
+      className={`min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF8A4C] text-white flex items-center justify-center ${className}`}
+      style={{ fontSize: 10, fontWeight: 700, lineHeight: 1 }}
+      aria-label={`${count} unread`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
   const { myTrips, fetchMyTrips } = useTrips();
+  const { unreadCount } = useMessages();
 
   useEffect(() => {
     if (user) fetchMyTrips();
@@ -73,7 +91,8 @@ function Sidebar() {
               style={{ fontSize: 13, fontWeight: active ? 600 : 500 }}
             >
               <Icon className="w-4 h-4 shrink-0" strokeWidth={2} />
-              {label}
+              <span className="flex-1 truncate">{label}</span>
+              {to === "/messages" ? <NavBadge count={unreadCount} /> : null}
             </button>
           );
         })}
@@ -190,10 +209,11 @@ function MobileNav() {
   const location = useLocation();
   const isActive = (to: string) =>
     to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+  const { unreadCount } = useMessages();
   const items = [...NAV, { to: "/profile", label: "Profile", icon: CircleUserRound }];
 
   return (
-    <nav className="md:hidden grid grid-cols-5 border-t border-border bg-card px-1 py-2" aria-label="Main navigation">
+    <nav className="md:hidden grid grid-cols-6 border-t border-border bg-card px-1 py-2" aria-label="Main navigation">
       {items.map(({ to, label, icon: Icon }) => {
         const active = isActive(to);
         return (
@@ -204,8 +224,15 @@ function MobileNav() {
             className={`flex flex-col items-center gap-1 py-1 ${active ? "text-primary" : "text-muted-foreground"}`}
             style={{ fontSize: 10, fontWeight: active ? 700 : 500 }}
           >
-            <Icon className="w-4 h-4" />
-            {label}
+            <span className="relative">
+              <Icon className="w-4 h-4" />
+              {to === "/messages" ? (
+                <NavBadge count={unreadCount} className="absolute -top-2 -right-3" />
+              ) : null}
+            </span>
+            <span className="truncate max-w-full px-0.5">
+              {label === "Travel buddies" ? "Buddies" : label}
+            </span>
           </button>
         );
       })}

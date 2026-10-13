@@ -19,12 +19,14 @@ import { Onboarding } from "./components/Onboarding";
 import AppShell from "@/components/layouts/AppShell";
 import ProtectedLayout from "@/components/layouts/ProtectedLayout";
 import Login from "@/pages/auth/Login";
+import Messages from "@/pages/Messages";
 import Profile from "@/pages/Profile";
 import Register from "@/pages/auth/Register";
 import ResendSetPasswordEmail from "@/pages/auth/ResendSetPasswordEmail";
 import SetPassword from "@/pages/auth/SetPassword";
 import NotFound from "@/pages/NotFound";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { MessagesProvider } from "@/contexts/MessagesContext";
 import { TripsProvider } from "@/contexts/TripsContext";
 import { TripProvider } from "@/contexts/TripContext";
 import { MembersProvider } from "@/contexts/MembersContext";
@@ -90,43 +92,47 @@ function OnboardingPage() {
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        {/* Auth & full-screen routes (no app shell) */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/set-password/:userId/:token" element={<SetPassword />} />
-        <Route
-          path="/resend-set-password-email"
-          element={<ResendSetPasswordEmail />}
-        />
-        <Route path="/onboarding" element={<OnboardingPage />} />
+      {/* Unread DM count for the nav badge; polls only while signed in. */}
+      <MessagesProvider>
+        <Routes>
+          {/* Auth & full-screen routes (no app shell) */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/set-password/:userId/:token" element={<SetPassword />} />
+          <Route
+            path="/resend-set-password-email"
+            element={<ResendSetPasswordEmail />}
+          />
+          <Route path="/onboarding" element={<OnboardingPage />} />
 
-        {/* App shell routes */}
-        <Route
-          element={
-            // TagsProvider sits here because the trip form (reachable from the
-            // home, trips, and trip-detail screens) picks tags from it.
-            <TripsProvider>
-              <TagsProvider>
-                <AppShell />
-              </TagsProvider>
-            </TripsProvider>
-          }
-        >
-          <Route index element={<PlanHomePage />} />
-          <Route path="/explore" element={<DesktopExplore />} />
-          <Route path="/ai-builder" element={<AIBuilderPage />} />
-          <Route path="/trips/:id" element={<TripDetailPage />} />
+          {/* App shell routes */}
+          <Route
+            element={
+              // TagsProvider sits here because the trip form (reachable from the
+              // home, trips, and trip-detail screens) picks tags from it.
+              <TripsProvider>
+                <TagsProvider>
+                  <AppShell />
+                </TagsProvider>
+              </TripsProvider>
+            }
+          >
+            <Route index element={<PlanHomePage />} />
+            <Route path="/explore" element={<DesktopExplore />} />
+            <Route path="/ai-builder" element={<AIBuilderPage />} />
+            <Route path="/trips/:id" element={<TripDetailPage />} />
 
-          <Route element={<ProtectedLayout />}>
-            <Route path="/trips" element={<DesktopTrips />} />
-            <Route path="/buddies" element={<DesktopBuddies />} />
-            <Route path="/profile" element={<Profile />} />
+            <Route element={<ProtectedLayout />}>
+              <Route path="/trips" element={<DesktopTrips />} />
+              <Route path="/buddies" element={<DesktopBuddies />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/profile" element={<Profile />} />
+            </Route>
           </Route>
-        </Route>
 
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </MessagesProvider>
       <Toaster />
     </AuthProvider>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, Loader2 } from "lucide-react";
+import { Camera, Loader2, MapPin, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -9,6 +9,11 @@ import { Field, FieldRow } from "@/components/modals/FormModal";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useImagePicker } from "@/hooks/useImagePicker";
+import {
+  INTEREST_MAX_LENGTH,
+  INTEREST_SUGGESTIONS,
+  INTERESTS_MAX,
+} from "@/config";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 
 /** Your own profile, backed by GET/PATCH /auth/me/. */
@@ -19,6 +24,8 @@ export default function Profile() {
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [bio, setBio] = useState("");
+  const [location, setLocation] = useState("");
+  const [interests, setInterests] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
 
@@ -44,6 +51,8 @@ export default function Profile() {
     setLastName(user.last_name || "");
     setPhone(user.phone || "");
     setBio(user.bio || "");
+    setLocation(user.location || "");
+    setInterests(Array.isArray(user.interests) ? user.interests : []);
     // Keyed on id so an avatar upload doesn't wipe unsaved field edits.
   }, [user?.id]);
 
@@ -55,6 +64,8 @@ export default function Profile() {
         last_name: lastName.trim(),
         phone: phone.trim(),
         bio: bio.trim(),
+        location: location.trim(),
+        interests,
       });
       toast.success("Profile updated");
     } catch (error) {
@@ -186,12 +197,135 @@ export default function Profile() {
           />
         </Field>
 
+        <Field label="Location" htmlFor="pf-location">
+          <div className="relative">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <Input
+              id="pf-location"
+              value={location}
+              maxLength={100}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Jakarta, ID"
+              className="pl-9"
+            />
+          </div>
+        </Field>
+
+        <Field
+          label="Interests"
+          htmlFor="pf-interests"
+          hint={`Up to ${INTERESTS_MAX} — shown on your buddy card.`}
+        >
+          <InterestsInput
+            id="pf-interests"
+            value={interests}
+            onChange={setInterests}
+          />
+        </Field>
+
         <div className="flex justify-end">
           <Button onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save profile"}
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Chip input for profile interests: Enter/comma adds, Backspace removes. */
+function InterestsInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const full = value.length >= INTERESTS_MAX;
+  const has = (tag: string) =>
+    value.some((v) => v.toLowerCase() === tag.toLowerCase());
+
+  const add = (raw: string) => {
+    const tag = raw.trim().slice(0, INTEREST_MAX_LENGTH);
+    if (!tag || has(tag)) return;
+    if (full) {
+      toast.error(`You can pick up to ${INTERESTS_MAX} interests`);
+      return;
+    }
+    onChange([...value, tag]);
+  };
+
+  const remove = (tag: string) => onChange(value.filter((v) => v !== tag));
+
+  const suggestions = INTEREST_SUGGESTIONS.filter((s) => !has(s));
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-input-background px-2 py-1.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 transition-[color,box-shadow]">
+        {value.map((tag) => (
+          <span
+            key={tag}
+            className="flex items-center gap-1 bg-secondary text-secondary-foreground rounded-full pl-2.5 pr-1 py-0.5"
+            style={{ fontSize: 12, fontWeight: 600 }}
+          >
+            {tag}
+            <button
+              type="button"
+              onClick={() => remove(tag)}
+              aria-label={`Remove ${tag}`}
+              className="rounded-full p-0.5 hover:bg-primary/15"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        ))}
+        <input
+          id={id}
+          value={draft}
+          maxLength={INTEREST_MAX_LENGTH}
+          disabled={full}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              add(draft);
+              setDraft("");
+            } else if (e.key === "Backspace" && !draft && value.length) {
+              remove(value[value.length - 1]);
+            }
+          }}
+          onBlur={() => {
+            if (draft.trim()) {
+              add(draft);
+              setDraft("");
+            }
+          }}
+          placeholder={
+            full ? "Max reached" : value.length ? "Add another…" : "Type and press Enter"
+          }
+          className="flex-1 min-w-[120px] bg-transparent outline-none py-0.5 text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed"
+          style={{ fontSize: 14 }}
+        />
+      </div>
+      {!full && suggestions.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => add(s)}
+              className="flex items-center gap-1 border border-dashed border-border text-muted-foreground rounded-full px-2.5 py-0.5 hover:border-primary hover:text-primary transition-colors"
+              style={{ fontSize: 12, fontWeight: 500 }}
+            >
+              <Plus className="w-3 h-3" />
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

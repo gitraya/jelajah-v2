@@ -1,24 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
-import { Calendar, Check, MapPin, Search, UserPlus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Calendar,
+  Check,
+  MapPin,
+  MessageCircle,
+  Search,
+  Star,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
+import { ChatSheet } from "@/components/messages/ChatSheet";
 import { InviteBuddyModal } from "@/components/modals/InviteBuddyModal";
-import { useAuth } from "@/contexts/AuthContext";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useTrips } from "@/contexts/TripsContext";
 import { useApi } from "@/hooks/useApi";
-import { colorFor, memberInitials, memberName } from "@/lib/adapters";
+import {
+  PRESENCE_COLORS,
+  buddyToCard,
+  colorFor,
+  memberInitials,
+  memberName,
+} from "@/lib/adapters";
 import { getErrorMessage } from "@/lib/utils";
 
-/** A person you share at least one trip with, folded across all your trips. */
-interface Buddy {
-  userId: string;
-  name: string;
-  email: string;
-  initials: string;
-  color: string;
-  sharedTrips: { id: string; title: string }[];
-}
+type Buddy = ReturnType<typeof buddyToCard>;
 
 /** A PENDING membership on a trip you can manage. */
 interface PendingInvite {
@@ -31,12 +39,12 @@ interface PendingInvite {
 }
 
 /**
- * There is no /buddies endpoint — this view is derived by fanning out over the
- * member list of every trip you belong to and folding the results by user.
+ * Buddies come from GET /auth/buddies/ (people you share an accepted trip
+ * with, already sorted online-first). Pending join requests are still read
+ * from the member list of each trip you can manage.
  */
 export function DesktopBuddies() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { myTrips, fetchMyTrips } = useTrips();
   const { getRequest, patchRequest } = useApi();
 
@@ -47,93 +55,79 @@ export function DesktopBuddies() {
   const [resolved, setResolved] = useState<Set<string>>(new Set());
   /** null = closed; {} = generic invite; a Buddy = invite that person. */
   const [inviting, setInviting] = useState<Buddy | {} | null>(null);
-  const invitee = inviting && "userId" in inviting ? inviting : null;
+  const invitee = inviting && "id" in inviting ? inviting : null;
+  const [chatWith, setChatWith] = useState<any | null>(null);
+
+  const fetchBuddies = useCallback(async () => {
+    try {
+      const res = await getRequest("/auth/buddies/");
+      setBuddies((res.data || []).map(buddyToCard));
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not load your buddies"));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
+    fetchBuddies();
     fetchMyTrips();
-  }, [fetchMyTrips]);
+  }, [fetchBuddies, fetchMyTrips]);
 
+  // Join requests only exist on trips you can manage, so only read those.
   useEffect(() => {
     if (!myTrips) return;
     let cancelled = false;
+    const manageable = myTrips.filter((t: any) => t.is_editable);
 
-    const load = async () => {
-      setIsLoading(true);
-      const results = await Promise.all(
-        myTrips.map(async (trip: any) => {
-          try {
-            const res = await getRequest(`/trips/${trip.id}/members/items/`);
-            return { trip, members: res.data || [] };
-          } catch {
-            // A trip we can't read members for shouldn't sink the whole page.
-            return { trip, members: [] };
-          }
-        })
-      );
+    Promise.all(
+      manageable.map(async (trip: any) => {
+        try {
+          const res = await getRequest(`/trips/${trip.id}/members/items/`);
+          return { trip, members: res.data || [] };
+        } catch {
+          // A trip we can't read members for shouldn't sink the banner.
+          return { trip, members: [] };
+        }
+      })
+    ).then((results) => {
       if (cancelled) return;
-
-      const byUser = new Map<string, Buddy>();
       const invites: PendingInvite[] = [];
-
       results.forEach(({ trip, members }) => {
         members.forEach((m: any) => {
           const uid = m.user?.id;
-          if (!uid) return;
-
-          if (m.status === "PENDING" && trip.is_editable) {
-            invites.push({
-              memberId: m.id,
-              tripId: trip.id,
-              tripTitle: trip.title,
-              name: memberName(m),
-              initials: memberInitials(m),
-              color: colorFor(m.user?.email || uid),
-            });
-          }
-
-          if (uid === user?.id || m.status !== "ACCEPTED") return;
-
-          const existing = byUser.get(uid);
-          if (existing) {
-            existing.sharedTrips.push({ id: trip.id, title: trip.title });
-          } else {
-            byUser.set(uid, {
-              userId: uid,
-              name: memberName(m),
-              email: m.user?.email || "",
-              initials: memberInitials(m),
-              color: colorFor(m.user?.email || uid),
-              sharedTrips: [{ id: trip.id, title: trip.title }],
-            });
-          }
+          if (!uid || m.status !== "PENDING") return;
+          invites.push({
+            memberId: m.id,
+            tripId: trip.id,
+            tripTitle: trip.title,
+            name: memberName(m),
+            initials: memberInitials(m),
+            color: colorFor(m.user?.email || uid),
+          });
         });
       });
-
-      setBuddies(
-        [...byUser.values()].sort(
-          (a, b) => b.sharedTrips.length - a.sharedTrips.length
-        )
-      );
       setPending(invites);
-      setIsLoading(false);
-    };
+    });
 
-    load();
     return () => {
       cancelled = true;
     };
-  }, [myTrips, user?.id]);
+  }, [myTrips]);
 
-  const filtered = useMemo(
-    () =>
-      buddies.filter(
-        (b) =>
-          !search ||
-          b.name.toLowerCase().includes(search.toLowerCase()) ||
-          b.email.toLowerCase().includes(search.toLowerCase())
-      ),
-    [buddies, search]
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return buddies;
+    return buddies.filter(
+      (b) =>
+        b.name.toLowerCase().includes(q) ||
+        b.email.toLowerCase().includes(q) ||
+        b.location.toLowerCase().includes(q) ||
+        b.interests.some((i) => i.toLowerCase().includes(q))
+    );
+  }, [buddies, search]);
+
+  const onlineCount = buddies.filter((b) => b.isOnline).length;
 
   const respond = async (invite: PendingInvite, status: string) => {
     try {
@@ -146,6 +140,7 @@ export function DesktopBuddies() {
         status === "ACCEPTED" ? "Request accepted" : "Request declined",
         { description: `${invite.name} · ${invite.tripTitle}` }
       );
+      if (status === "ACCEPTED") fetchBuddies();
     } catch (error) {
       toast.error(getErrorMessage(error, "Could not update this request"));
     }
@@ -164,7 +159,9 @@ export function DesktopBuddies() {
             Travel <span className="text-primary">buddies</span>
           </h1>
           <p className="text-muted-foreground" style={{ fontSize: 14 }}>
-            People you've travelled with across your trips
+            {isLoading
+              ? "People you've travelled with across your trips"
+              : `${buddies.length} ${buddies.length === 1 ? "friend" : "friends"} · ${onlineCount} online now`}
           </p>
         </div>
         <button
@@ -235,7 +232,7 @@ export function DesktopBuddies() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search buddies…"
+          placeholder="Search buddies by name, place or interest…"
           className="w-full bg-card border border-input rounded-2xl pl-11 pr-4 py-3 text-foreground placeholder-muted-foreground outline-none focus:border-primary transition-colors"
           style={{ fontSize: 14 }}
         />
@@ -254,92 +251,33 @@ export function DesktopBuddies() {
             className="text-foreground mb-2"
             style={{ fontWeight: 700, fontSize: 18 }}
           >
-            No travel buddies yet
+            {buddies.length ? "No buddies match your search" : "No travel buddies yet"}
           </p>
           <p className="text-muted-foreground mb-5" style={{ fontSize: 14 }}>
-            Invite people to a trip and they'll show up here
+            {buddies.length
+              ? "Try a different name, place or interest"
+              : "Invite people to a trip and they'll show up here"}
           </p>
-          <button
-            onClick={() => navigate("/trips")}
-            className="bg-primary text-white rounded-2xl px-6 py-3 flex items-center gap-2"
-            style={{ fontSize: 14, fontWeight: 600 }}
-          >
-            <UserPlus className="w-4 h-4" /> Go to your trips
-          </button>
+          {buddies.length === 0 && (
+            <button
+              onClick={() => navigate("/trips")}
+              className="bg-primary text-white rounded-2xl px-6 py-3 flex items-center gap-2"
+              style={{ fontSize: 14, fontWeight: 600 }}
+            >
+              <UserPlus className="w-4 h-4" /> Go to your trips
+            </button>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {filtered.map((b) => (
-            <div
-              key={b.userId}
-              className="bg-card border border-border rounded-2xl p-5 hover:shadow-md hover:border-primary/20 transition-all"
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0"
-                  style={{ background: b.color, fontSize: 14, fontWeight: 800 }}
-                >
-                  {b.initials}
-                </div>
-                <div className="min-w-0">
-                  <p
-                    className="text-foreground truncate"
-                    style={{ fontWeight: 700, fontSize: 15 }}
-                  >
-                    {b.name}
-                  </p>
-                  <p
-                    className="text-muted-foreground truncate"
-                    style={{ fontSize: 12 }}
-                  >
-                    {b.email}
-                  </p>
-                </div>
-              </div>
-
-              <div
-                className="flex items-center gap-3 text-muted-foreground mb-3"
-                style={{ fontSize: 12 }}
-              >
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  {b.sharedTrips.length} shared
-                  {b.sharedTrips.length === 1 ? " trip" : " trips"}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5">
-                {b.sharedTrips.slice(0, 3).map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => navigate(`/trips/${t.id}`)}
-                    className="flex items-center gap-1 bg-secondary text-secondary-foreground rounded-full px-2.5 py-1 hover:bg-primary hover:text-white transition-colors"
-                    style={{ fontSize: 11, fontWeight: 500 }}
-                  >
-                    <MapPin className="w-3 h-3" />
-                    {t.title}
-                  </button>
-                ))}
-                {b.sharedTrips.length > 3 && (
-                  <span
-                    className="text-muted-foreground px-1 py-1"
-                    style={{ fontSize: 11 }}
-                  >
-                    +{b.sharedTrips.length - 3} more
-                  </span>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setInviting(b)}
-                className="mt-3 w-full border-2 border-dashed border-border rounded-xl py-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-                style={{ fontSize: 12, fontWeight: 500 }}
-              >
-                + Invite to a trip
-              </button>
-            </div>
+            <BuddyCard
+              key={b.id}
+              buddy={b}
+              onChat={() => setChatWith(b.user)}
+              onInvite={() => setInviting(b)}
+              onOpenTrip={(id) => navigate(`/trips/${id}`)}
+            />
           ))}
         </div>
       )}
@@ -350,9 +288,143 @@ export function DesktopBuddies() {
         email={invitee?.email || undefined}
         name={invitee?.name}
         excludeTripIds={invitee?.sharedTrips.map((t) => t.id)}
-        // Refetching trips re-derives buddies, picking up the new membership.
-        onInvited={() => fetchMyTrips()}
+        onInvited={() => {
+          fetchMyTrips();
+          fetchBuddies();
+        }}
       />
+
+      <ChatSheet user={chatWith} onOpenChange={(open) => !open && setChatWith(null)} />
+    </div>
+  );
+}
+
+function BuddyCard({
+  buddy: b,
+  onChat,
+  onInvite,
+  onOpenTrip,
+}: {
+  buddy: Buddy;
+  onChat: () => void;
+  onInvite: () => void;
+  onOpenTrip: (id: string) => void;
+}) {
+  const shared = b.sharedTrips.length;
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 hover:border-primary/30 hover:shadow-sm transition-all flex flex-col">
+      <div className="flex items-start gap-3 mb-4">
+        <div className="relative shrink-0">
+          <UserAvatar
+            person={b.user}
+            className="w-12 h-12 rounded-2xl"
+            style={{ fontSize: 14, fontWeight: 800 }}
+          />
+          <span
+            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card"
+            style={{
+              background: b.isOnline ? PRESENCE_COLORS.online : PRESENCE_COLORS.offline,
+            }}
+            aria-label={b.isOnline ? "Online" : "Offline"}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-foreground truncate"
+            style={{ fontWeight: 700, fontSize: 15 }}
+          >
+            {b.name}
+          </p>
+          {b.location ? (
+            <p
+              className="text-muted-foreground flex items-center gap-1 truncate"
+              style={{ fontSize: 12 }}
+            >
+              <MapPin className="w-3 h-3 shrink-0" /> {b.location}
+            </p>
+          ) : null}
+          <p
+            className={b.isOnline ? "text-primary" : "text-muted-foreground"}
+            style={{ fontSize: 11, fontWeight: b.isOnline ? 600 : 400 }}
+          >
+            {b.presence}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onChat}
+          aria-label={`Message ${b.name}`}
+          title={`Message ${b.name}`}
+          className="group w-8 h-8 rounded-xl bg-muted flex items-center justify-center hover:bg-secondary transition-colors shrink-0"
+        >
+          <MessageCircle className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
+        </button>
+      </div>
+
+      {b.bio ? (
+        <p
+          className="text-muted-foreground mb-3"
+          style={{ fontSize: 13, lineHeight: 1.5 }}
+        >
+          {b.bio}
+        </p>
+      ) : null}
+
+      {b.interests.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {b.interests.map((tag) => (
+            <span
+              key={tag}
+              className="bg-secondary text-secondary-foreground rounded-full px-2.5 py-0.5"
+              style={{ fontSize: 11, fontWeight: 600 }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div
+        className="flex items-center gap-4 border-t border-border pt-3 mb-3 mt-auto"
+        style={{ fontSize: 12 }}
+      >
+        <span className="text-muted-foreground flex items-center gap-1">
+          <Star className="w-3 h-3" style={{ color: "#FF8A4C" }} fill="#FF8A4C" />{" "}
+          {b.tripsCount} {b.tripsCount === 1 ? "trip" : "trips"}
+        </span>
+        <span className="text-muted-foreground">{b.mutualCount} mutual</span>
+        {shared > 0 && (
+          <span className="text-primary flex items-center gap-1">
+            <Calendar className="w-3 h-3" /> {shared} shared
+          </span>
+        )}
+      </div>
+
+      {shared > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {b.sharedTrips.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onOpenTrip(t.id)}
+              className="bg-muted text-muted-foreground rounded-lg px-2 py-0.5 hover:bg-primary hover:text-white transition-colors"
+              style={{ fontSize: 11 }}
+              title={t.destination || t.title}
+            >
+              {t.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onInvite}
+        className="w-full border-2 border-dashed border-border rounded-xl py-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+        style={{ fontSize: 12, fontWeight: 500 }}
+      >
+        + Invite to a trip
+      </button>
     </div>
   );
 }

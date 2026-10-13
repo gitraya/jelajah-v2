@@ -28,10 +28,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const checkAuth = async ({ disableError = false } = {}) => {
+  // `silent` re-reads the user without flipping `loading`, so a background
+  // token refresh doesn't make ProtectedLayout unmount the current page.
+  const checkAuth = async ({ disableError = false, silent = false } = {}) => {
     try {
       setError(null);
-      setLoading(true);
+      if (!silent) setLoading(true);
 
       const response = await getAPIData("/auth/me/");
 
@@ -46,7 +48,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(false);
       return false;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 

@@ -7,6 +7,7 @@ import {
   Loader2,
   MapPin,
   Pencil,
+  Star,
   Trash2,
   Users,
   Wallet,
@@ -24,13 +25,14 @@ import { BudgetTab } from "@/components/trip/BudgetTab";
 import { ChecklistTab } from "@/components/trip/ChecklistTab";
 import { ItineraryTab } from "@/components/trip/ItineraryTab";
 import { PackingTab } from "@/components/trip/PackingTab";
+import { ReviewsTab } from "@/components/trip/ReviewsTab";
 import { TravelersTab } from "@/components/trip/TravelersTab";
 import { UserAvatar } from "@/components/UserAvatar";
 import { TripFormModal } from "@/components/modals/TripFormModal";
 import { useExpenses } from "@/contexts/ExpensesContext";
 import { useMembers } from "@/contexts/MembersContext";
 import { useTrip } from "@/contexts/TripContext";
-import { coverImage, formatRp } from "@/lib/adapters";
+import { coverImage, formatRating, formatRp, reviewsLabel } from "@/lib/adapters";
 import { getTripDifficultyColor, getTripStatusColor } from "@/lib/colors";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 import { useImagePicker } from "@/hooks/useImagePicker";
@@ -47,6 +49,7 @@ const TABS = [
   "packing",
   "checklist",
   "travelers",
+  "reviews",
 ] as const;
 type DetailTab = (typeof TABS)[number];
 
@@ -56,13 +59,18 @@ export function DesktopTripDetail({ onBack }: Props) {
 
   const [coverBusy, setCoverBusy] = useState(false);
 
-  const { trip, isLoading, updateTrip, uploadCover, removeCover } = useTrip();
+  const { trip, isLoading, updateTrip, uploadCover, removeCover, fetchTripDetails } =
+    useTrip();
   const { members } = useMembers();
   const { statistics: expenseStats } = useExpenses();
 
   // `is_editable` is computed server-side from ownership + role, so trust it
   // rather than re-deriving permissions in the client.
   const canEdit = Boolean(trip?.is_editable);
+  // Reviews only make sense once a trip is shared or has been reviewed.
+  const showReviews = Boolean(trip?.is_public) || Number(trip?.reviews_count || 0) > 0;
+  const tabs = TABS.filter((t) => t !== "reviews" || showReviews);
+  const rating = formatRating(trip?.rating_avg);
 
   const runCoverAction = async (action: () => Promise<unknown>, success: string) => {
     setCoverBusy(true);
@@ -213,8 +221,20 @@ export function DesktopTripDetail({ onBack }: Props) {
           >
             {trip.title}
           </h1>
-          <p className="text-white/80" style={{ fontSize: 13 }}>
+          <p className="text-white/80 flex flex-wrap items-center gap-x-1" style={{ fontSize: 13 }}>
             {trip.dates} · {travelerCount} travelers
+            {rating ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab("reviews")}
+                className="inline-flex items-center gap-1 hover:text-white"
+              >
+                {" "}·{" "}
+                <Star className="w-3.5 h-3.5" style={{ color: "#FF8A4C" }} fill="#FF8A4C" />
+                <span className="text-white" style={{ fontWeight: 700 }}>{rating}</span>
+                <span>({reviewsLabel(trip.reviews_count)})</span>
+              </button>
+            ) : null}
           </p>
         </div>
 
@@ -266,7 +286,7 @@ export function DesktopTripDetail({ onBack }: Props) {
 
       {/* Tabs */}
       <div className="flex gap-1 mx-3 md:mx-6 mt-5 bg-muted rounded-xl p-1 w-fit max-w-[calc(100%-1.5rem)] overflow-x-auto">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
@@ -289,6 +309,9 @@ export function DesktopTripDetail({ onBack }: Props) {
         {activeTab === "checklist" && <ChecklistTab canEdit={canEdit} />}
         {activeTab === "travelers" && (
           <TravelersTab trip={trip} canEdit={canEdit} />
+        )}
+        {activeTab === "reviews" && showReviews && (
+          <ReviewsTab trip={trip} onChanged={() => fetchTripDetails(trip.id)} />
         )}
       </div>
 

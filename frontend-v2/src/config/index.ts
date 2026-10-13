@@ -76,3 +76,26 @@ export const CHECKLIST_PRIORITY = {
   MEDIUM: "Medium",
   HIGH: "High",
 };
+
+// Profile interests (backend validates the same limits on User.interests).
+export const INTERESTS_MAX = 6;
+export const INTEREST_MAX_LENGTH = 30;
+export const INTEREST_SUGGESTIONS = [
+  "Beach",
+  "Food",
+  "City",
+  "Culture",
+  "Nature",
+  "Adventure",
+  "Hiking",
+  "Budget",
+];
+
+// Trip reviews: TripReview.rating is 1–5, comment up to 1000 chars.
+export const REVIEW_MAX_RATING = 5;
+export const REVIEW_COMMENT_MAX_LENGTH = 1000;
+
+// Direct messages
+export const MESSAGE_MAX_LENGTH = 2000;
+export const MESSAGE_POLL_MS = 5_000;
+export const UNREAD_POLL_MS = 30_000;
